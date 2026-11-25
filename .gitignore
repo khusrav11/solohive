@@ -1,0 +1,24 @@
+# Секреты
+.env
+.env.*
+!.env.example
+
+# Кэш ответов LLM
+.solohive_cache/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+env/
+build/
+dist/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

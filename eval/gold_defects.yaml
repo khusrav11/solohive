@@ -1,0 +1,205 @@
+# Контрольный список дефектов эксперта для docs/requirements.md (учебный кейс BCC-HUB).
+# Используется ТОЛЬКО для оценки полноты агента (recall) — агент этот файл не читает.
+# Дефект засчитан, если в отчёте есть активная находка, у которой доказательство попадает
+# в одну из строк lines, а заголовок/объяснение содержит хотя бы одно ключевое слово.
+
+- id: G01
+  title: Ф-3 «максимум один push в месяц» противоречит Ф-4 «push независимо от истории»
+  severity: CRITICAL
+  lines: [39, 40]
+  keywords: [противореч, второй, независимо, один push, повторн]
+- id: G02
+  title: Критерий приёмки №2 (февральский счётчик) противоречит Ф-2 (месяц по дате покупки — январь)
+  severity: CRITICAL
+  lines: [38, 64]
+  keywords: [феврал, январ]
+- id: G03
+  title: Цель «в момент покупки» несовместима с учётом только проведённых покупок (клиринг через дни)
+  severity: CRITICAL
+  lines: [23, 38]
+  keywords: [момент, проведён, проведен, клиринг, авторизац]
+- id: G04
+  title: HTTP GET для сохранения настроек (нарушение RFC 9110)
+  severity: CRITICAL
+  lines: [103, 104, 108, 109]
+  keywords: [GET]
+- id: G05
+  title: Статус 200 возвращает тело с result=ERROR
+  severity: MAJOR
+  lines: [165, 167, 169, 171]
+  keywords: [ERROR, ошибк]
+- id: G06
+  title: 200 подписан Created; 201 упомянут, но не описан
+  severity: MINOR
+  lines: [151, 165]
+  keywords: ["201", Created]
+- id: G07
+  title: В разделе 403 сказано, что возвращается 404; 404 нет в списке статусов
+  severity: MAJOR
+  lines: [174, 175, 188, 189, 190]
+  keywords: ["404"]
+- id: G08
+  title: Нет метода чтения настроек и суммы за месяц, хотя интеграция «читает и сохраняет», а UI показывает сумму
+  severity: CRITICAL
+  lines: [29, 52, 103]
+  keywords: [чтени, читает, получени]
+- id: G09
+  title: Description метода противоречив («Сохранение порога… чтение порога»)
+  severity: MINOR
+  lines: [103]
+  keywords: [чтени, описани, Description]
+- id: G10
+  title: Суммы в тиынах и тенге без правила пересчёта
+  severity: MAJOR
+  lines: [49, 124, 143]
+  keywords: [тиын]
+- id: G11
+  title: amount/enabled — integer в запросе и string в ответе
+  severity: MAJOR
+  lines: [143, 144, 156, 157]
+  keywords: [string, тип]
+- id: G12
+  title: В требованиях к данным нет enabled, типа операции, связи возврата с исходной покупкой
+  severity: MAJOR
+  lines: [49]
+  keywords: [enabled, включ, исходн, тип операции, возврат]
+- id: G13
+  title: «Месяц… в Алматы» — часовой пояс не задан, двусмысленно (город/пояс)
+  severity: MAJOR
+  lines: [38, 64]
+  keywords: [пояс, UTC, Алматы]
+- id: G14
+  title: Возвраты описаны неполно (прошлый месяц, частичный возврат, повторное пересечение порога)
+  severity: MAJOR
+  lines: [38]
+  keywords: [возврат]
+- id: G15
+  title: Не определено, какие операции считаются покупкой (платежи, комиссии, валютные операции)
+  severity: MAJOR
+  lines: [38]
+  keywords: [перевод, MCC, категор, валют, платеж, платёж]
+- id: G16
+  title: «Активная карта KZT» не определена (блокировка, перевыпуск, мультивалютные карты)
+  severity: MAJOR
+  lines: [37]
+  keywords: [активн, статус, перевыпуск, блок]
+- id: G17
+  title: Нет значения порога по умолчанию и поведения при включении, когда сумма уже выше порога
+  severity: MAJOR
+  lines: [37, 39]
+  keywords: [по умолчанию, включени, уже выше, уже превыш]
+- id: G18
+  title: Повторное сохранение того же порога/переключение тумблера может сбрасывать признак отправки
+  severity: MAJOR
+  lines: [40, 125]
+  keywords: [повторн, тот же, спам, тумблер, переключ]
+- id: G19
+  title: В push передаётся «сумма» — неясно какая (накопленная, покупка, порог); текст push не задан
+  severity: MAJOR
+  lines: [43]
+  keywords: [сумм, текст, содерж]
+- id: G20
+  title: НФТ «в течение минуты» без перцентиля и профиля нагрузки
+  severity: MAJOR
+  lines: [46]
+  keywords: [перцентил, нагрузк, p9]
+- id: G21
+  title: НФТ меряет передачу на отправку, а не доставку клиенту
+  severity: MINOR
+  lines: [46]
+  keywords: [доставк]
+- id: G22
+  title: Нет НФТ доступности, мониторинга, отката/feature toggle, ИБ
+  severity: MAJOR
+  lines: [46, 76]
+  keywords: [доступност, мониторинг, откат, toggle]
+- id: G23
+  title: Раздел тестирования — заглушка «заполняются тестировщиками»
+  severity: MAJOR
+  lines: [57]
+  keywords: [заглушк, тестировщик]
+- id: G24
+  title: Критерии приёмки неполны (нет границ Ф-1, Ф-4, возвратов, негативных сценариев)
+  severity: MAJOR
+  lines: [59, 61, 63, 64, 65]
+  keywords: [негатив, покрыва, граничн, не покрыт]
+- id: G25
+  title: В критерии приёмки №1 нет предусловий (уведомление включено, push ещё не отправлялся)
+  severity: MINOR
+  lines: [63]
+  keywords: [включ, предуслов, исходн]
+- id: G26
+  title: Чек-лист ревью не заполнен
+  severity: MINOR
+  lines: [68, 72, 85]
+  keywords: [чек-лист]
+- id: G27
+  title: Не указаны версия и дата документа
+  severity: MINOR
+  lines: [68]
+  keywords: [верси]
+- id: G28
+  title: Блок согласующих пуст
+  severity: MINOR
+  lines: [89, 91]
+  keywords: [согласу]
+- id: G29
+  title: Держатель vs владелец карты
+  severity: MINOR
+  lines: [37, 105]
+  keywords: [держател, владел]
+- id: G30
+  title: Порог назван «лимит» в API (saveLimit, limit_kzt)
+  severity: MINOR
+  lines: [108, 143]
+  keywords: [лимит, limit]
+- id: G31
+  title: cardId в query — попадает в логи (ИБ/PCI DSS)
+  severity: MAJOR
+  lines: [109, 142]
+  keywords: [query, строке запроса, лог, URL]
+- id: G32
+  title: Content-Type application/json для GET без тела
+  severity: MINOR
+  lines: [147]
+  keywords: [Content-Type]
+- id: G33
+  title: Ошибки только с текстом message, без кода
+  severity: MINOR
+  lines: [180, 185, 192, 197]
+  keywords: [код, message]
+- id: G34
+  title: Шаг 5 «вернуть прежнее состояние» не согласован с ответом (amount только при успехе)
+  severity: MAJOR
+  lines: [121, 156, 171]
+  keywords: [прежн]
+- id: G35
+  title: Логика метода не проверяет, что карта активна и в KZT (Ф-1)
+  severity: MAJOR
+  lines: [117, 118, 119, 120, 37]
+  keywords: [активн, KZT]
+- id: G36
+  title: Идемпотентность не определена (ключ дедупликации, порядок событий)
+  severity: MAJOR
+  lines: [52]
+  keywords: [идемпотент, дубл, ключ, повторн]
+- id: G37
+  title: Нет Prod URL и Swagger
+  severity: MINOR
+  lines: [108, 110]
+  keywords: [Prod, Swagger]
+- id: G38
+  title: Sequence не описывает ошибки и недоступность сервисов
+  severity: MAJOR
+  lines: [43]
+  keywords: [недоступ, ошиб, отказ]
+- id: G39
+  title: Ф-2 неатомарно (несколько правил в одном пункте)
+  severity: MINOR
+  lines: [38]
+  keywords: [атомар]
+- id: G40
+  title: НФТ, данные, интеграция без идентификаторов
+  severity: MINOR
+  lines: [46, 49, 52]
+  keywords: [идентификатор]

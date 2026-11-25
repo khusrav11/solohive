@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "solohive"
+version = "1.0.0"
+description = "SoloHive — рой ИИ-агентов для статической проверки требований (ISO/IEC/IEEE 29148, IEEE 830)"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Khusravkhon Ziyoboev (team SoloHive)" }]
+dependencies = [
+    "httpx>=0.24",
+    "pydantic>=2.5",
+    "rapidfuzz>=3.0",
+    "pdfplumber>=0.10",
+    "python-docx>=1.0",
+    "python-dotenv>=1.0",
+    "rich>=13.0",
+    "markdown>=3.4",
+    "markdownify>=0.11",
+    "eval_type_backport>=0.2; python_version < '3.10'",
+]
+
+[project.optional-dependencies]
+openai = ["openai>=1.40"]
+anthropic = ["anthropic>=0.34"]
+dev = ["pytest>=7"]
+
+[project.scripts]
+solohive = "solohive.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["solohive*"]
+
+[tool.setuptools.package-data]
+solohive = ["prompts/*.md"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
