@@ -296,6 +296,17 @@ def sensitive_in_query(doc: SourceDocument) -> list[Finding]:
 
 
 _STATUS_START = re.compile(r"^\s*(?:#{1,6}\s*|\*\*)\s*(\d{3})\b")
+_STATUS_LOOSE = re.compile(r"^\s*(?:HTTP\s*|код\s*|статус\s*)?(\d{3})(?:\s*[.:—–-]|\s+[A-ZА-ЯЁ])", re.I)
+
+
+def _status_code_at(line: Line) -> int | None:
+    """Код HTTP в начале строки-заголовка статуса (markdown-заголовок, жирный текст или строка в разделе статусов)."""
+    m = _STATUS_START.match(line.text)
+    if not m and len(line.text) < 120 and section_has(line, r"статус|код\w* ответ|status|response|ответ"):
+        m = _STATUS_LOOSE.match(clean_md(line.text))
+    if m and 100 <= int(m.group(1)) <= 599:
+        return int(m.group(1))
+    return None
 _REASONS = {
     "ok": 200, "created": 201, "accepted": 202, "no content": 204, "bad request": 400, "unauthorized": 401,
     "forbidden": 403, "not found": 404, "conflict": 409, "unprocessable entity": 422,
@@ -306,14 +317,13 @@ _REASONS = {
 def _status_blocks(doc: SourceDocument) -> list[tuple[int, Line, list[Line]]]:
     """Блоки описания HTTP-статусов: (код, строка-заголовок, строки блока)."""
     lines = list(doc.lines)
-    starts = [(i, int(m.group(1))) for i, ln in enumerate(lines) if (m := _STATUS_START.match(ln.text))
-              and 100 <= int(m.group(1)) <= 599]
+    starts = [(i, code) for i, ln in enumerate(lines) if (code := _status_code_at(ln)) is not None]
     blocks = []
     for k, (i, code) in enumerate(starts):
         end = starts[k + 1][0] if k + 1 < len(starts) else len(lines)
         body = []
         for ln in lines[i + 1: end]:
-            if _HEADING.match(ln.text) and not _STATUS_START.match(ln.text):
+            if _HEADING.match(ln.text) and _status_code_at(ln) is None:
                 break
             body.append(ln)
         blocks.append((code, lines[i], body))
@@ -369,7 +379,7 @@ def undeclared_status(doc: SourceDocument) -> list[Finding]:
     out = []
     reported = set()
     for line, _ in content_lines(doc):
-        if _STATUS_START.match(line.text):
+        if _status_code_at(line) is not None:
             continue
         for m in re.finditer(r"\b([1-5]\d\d)\b", line.text):
             code = int(m.group(1))

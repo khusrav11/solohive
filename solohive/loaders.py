@@ -30,8 +30,10 @@ def load_document(path: str | Path) -> SourceDocument:
     data = p.read_bytes()
     sha = hashlib.sha256(data).hexdigest()
     pages = None
-    if fmt in ("markdown", "text"):
+    if fmt == "markdown":
         markdown = _decode(data)
+    elif fmt == "text":
+        markdown = promote_headings(_decode(data))
     elif fmt == "pdf":
         markdown, pages = _pdf_to_markdown(p)
     elif fmt == "docx":
@@ -41,6 +43,35 @@ def load_document(path: str | Path) -> SourceDocument:
     if not markdown.strip():
         raise LoadError(f"Не удалось извлечь текст из {p.name}: документ пуст или это скан без текстового слоя.")
     return SourceDocument.from_markdown(p, fmt, sha, markdown, pages)
+
+
+_NUM_HEADING = re.compile(r"^(\d+(?:\.\d+)*)\.?\s+(\S.{1,90})$")
+
+
+def _looks_caps(text: str) -> bool:
+    letters = [c for c in text if c.isalpha()]
+    return len(letters) >= 4 and sum(c.isupper() for c in letters) / len(letters) > 0.85
+
+
+def promote_headings(text: str) -> str:
+    """Распознаёт заголовки в тексте без разметки: «2. ФУНКЦИОНАЛЬНЫЕ ТРЕБОВАНИЯ», «3.1 Логика», строки КАПСОМ."""
+    out = []
+    seen_title = False
+    for raw in text.replace("\r\n", "\n").split("\n"):
+        line = raw.strip()
+        if not line or line.startswith(("#", "|", "*", "-", "`")) or line.endswith((".", ",", ";", ":")):
+            out.append(raw)
+            continue
+        m = _NUM_HEADING.match(line)
+        if m and (_looks_caps(m.group(2)) or len(line) <= 60):
+            level = min(6, m.group(1).count(".") + 2)
+            out.append("#" * level + " " + line)
+        elif _looks_caps(line) and len(line) <= 120:
+            out.append(("## " if seen_title else "# ") + line)
+            seen_title = True
+        else:
+            out.append(raw)
+    return "\n".join(out)
 
 
 def _decode(data: bytes) -> str:
@@ -141,8 +172,10 @@ def _docx_to_markdown(path: Path) -> str:
                 out.append("#" * int(m.group(2)) + " " + text)
             elif "list" in style or "спис" in style or child.find(".//{*}numPr") is not None:
                 out.append(f"* {text}")
+            elif _all_bold(p) and len(text) < 100 and not text.endswith((".", ",", ";", ":")):
+                out.append(promote_headings(text) if _NUM_HEADING.match(text) else f"### {text}")
             else:
-                out.append(text)
+                out.append(promote_headings(text))
         elif tag == "tbl":
             t = DocxTable(child, d)
             rows = [[_cell(c.text) for c in r.cells] for r in t.rows]
@@ -152,6 +185,11 @@ def _docx_to_markdown(path: Path) -> str:
                 out += ["| " + " | ".join(r) + " |" for r in rows[1:]]
             out.append("")
     return "\n".join(out)
+
+
+def _all_bold(p) -> bool:
+    runs = [r for r in p.runs if r.text.strip()]
+    return bool(runs) and all(r.bold for r in runs)
 
 
 # --- HTML -----------------------------------------------------------------------------------------
