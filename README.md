@@ -41,6 +41,14 @@ python -m solohive --input examples/requirements.pdf --output reports/report.md 
 
 После проверки агент задаёт уточняющие вопросы прямо в консоли (ответ — текстом или буквой варианта, Enter — пропустить). Затем агент-редактор пересматривает дефекты (устранён / частично / открыт), пересчитывает вердикт и выпускает **`reports/report_revised.md`** — исправленную редакцию требований («было → стало», новые требования, критерии приёмки). Ответы сохраняются в `reports/report_answers.json`. Повторить без диалога можно так: `--answers reports/report_answers.json`.
 
+### Запуск в Docker (по желанию)
+
+```bash
+docker build -t solohive .
+docker run --rm --env-file .env -v "$PWD/reports:/app/reports" solohive \
+  --input examples/requirements.pdf --output reports/report.md
+```
+
 ### Как получить ключ LLM
 1. Откройте [Google AI Studio → API keys](https://aistudio.google.com/apikey) и войдите в Google-аккаунт.
 2. Нажмите **Create API key** и скопируйте ключ.

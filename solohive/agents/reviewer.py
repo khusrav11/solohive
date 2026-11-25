@@ -10,7 +10,7 @@ from .. import criteria as C
 from ..document import SourceDocument
 from ..llm.base import BaseLLM, FatalLLMError
 from ..models import CriterionEval, Finding, Requirement, RequirementReview
-from .common import (Loose, RawDefect, coerce_criteria, defect_to_finding, fill, load_prompt, norm_status,
+from .common import (Loose, RawDefect, coerce_criteria, defect_to_finding, fill, load_prompt, norm_rid, norm_status,
                      requirements_brief, system_prompt)
 
 
@@ -66,7 +66,7 @@ async def review_all(doc: SourceDocument, reqs: list[Requirement], llm: BaseLLM,
             warnings.append(f"Рецензент не обработал {batch[0].rid}–{batch[-1].rid}: {res}")
             continue
         for raw in res.reviews:
-            req = by_id.get(raw.rid.strip())
+            req = by_id.get(norm_rid(raw.rid, set(by_id)) or "")
             if req is None:
                 continue
             crit = coerce_criteria(raw.criteria)

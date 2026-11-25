@@ -181,3 +181,16 @@ def rule_hints(findings: list[Finding]) -> str:
     return ("Детерминированные правила уже нашли эти дефекты (они попадут в отчёт автоматически). Не повторяй их; "
             "сосредоточься на смысловых дефектах, которые правилами не ловятся. Упоминай их, только если "
             "добавляешь новый смысл (последствия, связь с другими требованиями):\n" + "\n".join(lines))
+
+
+def norm_rid(value: str, known: set[str]) -> str | None:
+    """«REQ-1», «req 01», «[REQ-01]» → «REQ-01», если такое требование есть."""
+    v = (value or "").strip().strip("[]").upper()
+    if v in known:
+        return v
+    m = re.search(r"(\d+)", v)
+    if m:
+        cand = f"REQ-{int(m.group(1)):02d}"
+        if cand in known:
+            return cand
+    return None
