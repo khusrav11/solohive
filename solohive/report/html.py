@@ -121,7 +121,7 @@ def render_html(report: Report) -> str:
   <button role="tab" data-tab="reqs">Требования</button>
   <button role="tab" data-tab="scen">Сценарии</button>
   <button role="tab" data-tab="questions">Вопросы</button>
-  <button role="tab" data-tab="final">Итог</button>
+  <button role="tab" data-tab="final">Итог</button>{CLARIFY_TAB}
   <button role="tab" data-tab="passport">Паспорт</button>
 </nav>"""
 
@@ -291,10 +291,42 @@ def render_html(report: Report) -> str:
   <tbody>{calls}</tbody></table></div>
 </section>"""
 
+    # --- уточнение ------------------------------------------------------------------------------------------
+    tab_clar = ""
+    cl = report.clarification
+    if cl is not None:
+        nav = nav.replace("{CLARIFY_TAB}", '\n  <button role="tab" data-tab="clarify">Уточнение</button>')
+        st_ru = {"resolved": "устранён", "partial": "частично", "open": "открыт"}
+        res = "".join(f'<tr class="r-{r.status}"><td><a href="#{r.fid}" data-fid="{r.fid}">{r.fid}</a></td>'
+                      f'<td>{st_ru[r.status]}</td><td>{E(r.comment)}</td></tr>' for r in cl.resolutions)
+        revs = []
+        for r in cl.revised:
+            orig = req_by_id.get(r.rid)
+            fixes = " ".join(f'<a href="#{x}" data-fid="{x}">{x}</a>' for x in r.fixes)
+            revs.append(f'<div class="rev"><h3>{E(r.doc_id or r.rid or "Новое требование")}'
+                        f'{" <span class=new>новое</span>" if r.is_new else ""}</h3>'
+                        + (f'<p class="was"><b>Было.</b> {E(orig.quote)}</p>' if orig else "")
+                        + f'<p class="now"><b>Стало.</b> {E(r.text)}</p>'
+                        + (f'<p class="muted">Устраняет: {fixes}</p>' if fixes else "") + "</div>")
+        acc = "".join(f"<tr><td>{E(', '.join(a.covers))}</td><td>{E(a.given)}</td><td>{E(a.when)}</td><td>{E(a.then)}</td></tr>"
+                      for a in cl.acceptance)
+        ans = "".join(f"<tr><td>{E(a.qid)}</td><td>{E(a.question)}</td><td><b>{E(a.answer)}</b></td></tr>" for a in cl.answers)
+        va = cl.verdict_after
+        tab_clar = f"""
+<section id="tab-clarify" class="tab">
+  <p class="lead">Ответов: {len(cl.answers)} из {len(report.questions)}. {E(cl.summary)}</p>
+  {f'<p class="big v-{va.dev_status}">После правок разработка: {STATUS_RU[va.dev_status].lower()}; тестирование: {STATUS_RU[va.test_status].lower()}.</p>' if va else ''}
+  <h2>Ответы</h2><div class="scroll"><table class="log"><tbody>{ans}</tbody></table></div>
+  {f'<h2>Пересмотр дефектов</h2><div class="scroll"><table class="log"><thead><tr><th>Дефект</th><th>Статус</th><th>Как меняется требование</th></tr></thead><tbody>{res}</tbody></table></div>' if res else ''}
+  {f'<h2>Исправленная редакция требований</h2>{"".join(revs)}' if revs else ''}
+  {f'<h2>Критерии приёмки</h2><div class="scroll"><table class="log"><thead><tr><th>Требование</th><th>Дано</th><th>Когда</th><th>Ожидается</th></tr></thead><tbody>{acc}</tbody></table></div>' if acc else ''}
+</section>"""
+    nav = nav.replace("{CLARIFY_TAB}", "")
+
     return f"""<!DOCTYPE html>
 <html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SoloHive — {E(P.document_title)}</title><style>{CSS}</style></head>
-<body>{header}{nav}<main>{tab_defects}{tab_reqs}{tab_scen}{tab_q}{tab_final}{tab_pass}</main>
+<body>{header}{nav}<main>{tab_defects}{tab_reqs}{tab_scen}{tab_q}{tab_final}{tab_clar}{tab_pass}</main>
 <footer class="foot">Отчёт сформирован автоматически агентом {E(P.agent_name)} v{E(P.agent_version)}. Ручная правка не производилась.</footer>
 <script>{JS}</script></body></html>"""
 
@@ -400,6 +432,10 @@ th{background:#eef1f5;font-weight:600}
 .qq{margin:0 0 4px;font-weight:600}.qid{color:var(--mute);font-weight:400;margin-right:.6em}.opts{margin:4px 0}.rel{font-size:.85rem;margin:4px 0 0}
 .tab h2{font-size:1.15rem;margin:22px 0 6px}
 .final{max-width:80ch}.final .big{font-size:1.3rem;font-weight:700;margin:16px 0 4px}.prio li{margin:6px 0}
+.rev{background:var(--paper);border:1px solid var(--rule);border-radius:4px;padding:10px 14px;margin:8px 0;max-width:95ch}
+.rev h3{margin:0 0 6px;font-size:1rem}.rev .new{font-size:.78rem;font-weight:600;color:var(--minor);margin-left:.5em}
+.was{color:var(--mute);text-decoration:line-through;text-decoration-color:#c9cfd8}.now{background:var(--minor-bg);padding:6px 10px;border-radius:4px}
+.r-resolved td:nth-child(2){color:var(--minor);font-weight:600}.r-partial td:nth-child(2){color:var(--major)}
 .kv th{width:200px}.hash{font-size:.8rem;word-break:break-all}.log{min-width:600px}
 .foot{max-width:1320px;margin:0 auto;padding:0 24px 30px;color:var(--mute);font-size:.85rem}
 @media (max-width:1000px){.split{grid-template-columns:1fr}.doc{position:static;max-height:60vh}.top h1{font-size:1.6rem}}
@@ -430,7 +466,7 @@ function apply(){const q=$('#fq').value.trim().toLowerCase(),c=$('#fcrit').value
 $$('.chip').forEach(b=>b.addEventListener('click',()=>{const on=b.getAttribute('aria-pressed')!=='true';b.setAttribute('aria-pressed',on);
   on?st.sev.add(b.dataset.sev):st.sev.delete(b.dataset.sev);apply()}));
 ['#fq','#fcrit','#fscope'].forEach(s=>$(s).addEventListener('input',apply));apply();
-const h=location.hash.slice(1);if(['reqs','scen','questions','final','passport'].includes(h))show(h);
+const h=location.hash.slice(1);if(['reqs','scen','questions','final','clarify','passport'].includes(h))show(h);
 else if(/^D-\d+$/.test(h))select(h,true);
 })();
 """

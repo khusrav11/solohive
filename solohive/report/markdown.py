@@ -115,7 +115,8 @@ def render(report: Report) -> str:
         "**Содержание:** [1. Паспорт прогона](#1-паспорт-прогона) · [2. Нарезка требований](#2-как-агент-нарезал-требования) · "
         "[3. Проверка каждого требования](#3-проверка-каждого-требования) · [4. Проверка набора](#4-проверка-всего-набора-требований) · "
         "[5. Сводка](#5-сводка) · [6. Уточняющие вопросы](#6-уточняющие-вопросы-к-бизнесу-и-аналитику) · [7. Итог](#7-итог) · "
-        "[Приложения](#приложение-a-журнал-верификации-находок)",
+        + ("[8. Уточнение](#8-уточнение-ответы-на-вопросы-и-пересмотр) · " if report.clarification else "")
+        + "[Приложения](#приложение-a-журнал-верификации-находок)",
         "",
     ]
 
@@ -313,6 +314,45 @@ def render(report: Report) -> str:
         for i, f in enumerate(sorted(act, key=lambda x: x.severity.rank)[:7], start=1):
             L.append(f"{i}. {cell(f.recommendation or f.title)} ({f.fid})")
     L.append("")
+
+    # --- 8. уточнение ---------------------------------------------------------------------------------------------
+    cl = report.clarification
+    if cl is not None:
+        n_res = sum(1 for r in cl.resolutions if r.status == "resolved")
+        n_part = sum(1 for r in cl.resolutions if r.status == "partial")
+        L += ["## 8. Уточнение: ответы на вопросы и пересмотр", "",
+              f"Получено ответов: **{len(cl.answers)}** из {len(report.questions)}. Устранено дефектов: **{n_res}**, "
+              f"частично: **{n_part}**.", ""]
+        if cl.summary:
+            L += [cell(cl.summary), ""]
+        if cl.verdict_after:
+            va = cl.verdict_after
+            L += [f"**Вердикт после уточнения:** разработка — {VERDICT_ICON[va.dev_status]} {STATUS_RU[va.dev_status]}, "
+                  f"тестирование — {VERDICT_ICON[va.test_status]} {STATUS_RU[va.test_status]} "
+                  f"(с учётом внесения правок из этого раздела).", ""]
+        L += ["### Ответы", "", "| Вопрос | Ответ |", "| :--- | :--- |"]
+        L += [f"| {a.qid}. {cell(a.question, 200)} | {cell(a.answer)} |" for a in cl.answers]
+        L.append("")
+        if cl.resolutions:
+            icon = {"resolved": "✅ устранён", "partial": "◐ частично", "open": "⏳ открыт"}
+            L += ["### Пересмотр дефектов", "", "| Дефект | Статус | Как ответ меняет требование |", "| :--- | :--- | :--- |"]
+            for r in cl.resolutions:
+                f = next((x for x in act if x.fid == r.fid), None)
+                L.append(f"| {r.fid} {cell(f.title, 80) if f else ''} | {icon[r.status]} | {cell(r.comment)} |")
+            L.append("")
+        if cl.revised:
+            L += ["### Исправленная редакция требований", ""]
+            for r in cl.revised:
+                orig = req_by_id.get(r.rid)
+                head = (r.doc_id or r.rid or "Новое требование") + (" (новое)" if r.is_new else "")
+                L.append(f"- **{cell(head)}**" + (f" — *было:* {q(orig.quote, 300)}" if orig else ""))
+                L.append(f"  - *стало:* {cell(r.text)}" + (f" *(устраняет: {', '.join(r.fixes)})*" if r.fixes else ""))
+            L.append("")
+        if cl.acceptance:
+            L += ["### Новые и исправленные критерии приёмки", "", "| Требование | Дано | Когда | Ожидается |",
+                  "| :--- | :--- | :--- | :--- |"]
+            L += [f"| {cell(', '.join(a.covers))} | {cell(a.given)} | {cell(a.when)} | {cell(a.then)} |" for a in cl.acceptance]
+            L.append("")
 
     # --- приложения ------------------------------------------------------------------------------------------
     dropped = [f for f in report.findings if f.status == "dropped"]
