@@ -89,3 +89,14 @@ def test_rule_hints_passed_to_llm_agents(settings, mock_llm):
     review_prompts = [u for stage, _, u in mock_llm.prompts if stage.startswith(("review", "set:", "scenarios"))]
     assert review_prompts and all("Детерминированные правила уже нашли" in u for u in review_prompts)
     assert all("HTTP GET" in u for u in review_prompts)
+
+
+def test_html_report_is_selfcontained_and_linked(settings, mock_llm, tmp_path):
+    report = run(settings, mock_llm)
+    paths = write_report(report, tmp_path / "r.md")
+    assert [p.suffix for p in paths] == [".md", ".html", ".json"]
+    page = paths[1].read_text(encoding="utf-8")
+    assert "<script src" not in page and "<link" not in page          # без внешних ресурсов
+    first = report.active_findings[0]
+    assert f'id="{first.fid}"' in page and f'data-fid="{first.fid}"' in page   # дефект ↔ пометка на полях
+    assert 'id="L39"' in page

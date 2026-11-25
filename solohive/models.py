@@ -184,6 +184,7 @@ class Report(BaseModel):
     calls: list[CallRecord] = Field(default_factory=list)
     stage_times: dict[str, float] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
+    source_lines: list[str] = Field(default_factory=list)   # текст документа по строкам (для HTML-просмотра)
 
     @property
     def active_findings(self) -> list[Finding]:
