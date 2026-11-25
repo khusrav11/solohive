@@ -29,7 +29,7 @@ def test_report_has_all_required_sections(settings, mock_llm, tmp_path):
     assert "Уведомление о расходах по карте" in md
     assert "mock-model" in md
     assert "Версия агента" in md
-    data = json.loads(paths[1].read_text(encoding="utf-8"))
+    data = json.loads(next(p for p in paths if p.suffix == ".json").read_text(encoding="utf-8"))
     assert data["passport"]["document_lines"] > 100
 
 
