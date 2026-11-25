@@ -57,7 +57,7 @@ class Settings:
     base_url: str | None = None
     temperature: float = 0.2
     max_output_tokens: int = 32768
-    concurrency: int = 4
+    concurrency: int = 5
     rpm: int = 0                    # 0 = без ограничения частоты (429 всё равно обрабатывается)
     timeout: float = 240.0
     max_retries: int = 5
@@ -124,7 +124,7 @@ class Settings:
             base_url=base_url,
             temperature=float(_env("LLM_TEMPERATURE", "0.2")),
             max_output_tokens=int(_env("LLM_MAX_OUTPUT_TOKENS", "32768")),
-            concurrency=max(1, int(_env("LLM_CONCURRENCY", "4"))),
+            concurrency=max(1, int(_env("LLM_CONCURRENCY", "5"))),
             rpm=max(0, int(_env("LLM_RPM", "0"))),
             timeout=float(_env("LLM_TIMEOUT", "240")),
             max_retries=max(0, int(_env("LLM_MAX_RETRIES", "5"))),

@@ -9,6 +9,8 @@
 
 Здесь нужны пробелы и системные риски набора, а не замечания к отдельным формулировкам. Каждый дефект подтверждай цитатой: для отсутствующего — цитируй место, где это должно быть описано (заголовок раздела или связанную формулировку).
 
+{RULE_HINTS}
+
 Схема ответа:
 {"set_criteria": {"set_complete": {"status": "ok|warn|fail", "comment": "…"}, "set_feasible": {"status": "…", "comment": "…"}, "ranked": {"status": "…", "comment": "…"}, "modifiable": {"status": "…", "comment": "…"}},
  "defects": [{"criterion": "set_complete", "severity": "MAJOR", "title": "…", "quotes": ["дословная цитата"], "explanation": "…", "recommendation": "…"}],

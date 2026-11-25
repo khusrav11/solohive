@@ -10,6 +10,8 @@
 
 Каждый дефект подтверждай дословными цитатами (quotes — список, первая цитата основная). Не дублируй дефекты, касающиеся только одной формулировки, — здесь нужны межраздельные проблемы.
 
+{RULE_HINTS}
+
 Схема ответа:
 {"set_criteria": {"set_consistent": {"status": "ok|warn|fail", "comment": "…"}, "comprehensible": {"status": "…", "comment": "…"}, "traceable": {"status": "…", "comment": "…"}, "validatable": {"status": "…", "comment": "…"}},
  "defects": [{"criterion": "set_consistent", "severity": "CRITICAL", "title": "…", "quotes": ["дословная цитата 1", "дословная цитата 2"], "explanation": "…", "recommendation": "…"}],

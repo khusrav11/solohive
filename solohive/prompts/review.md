@@ -17,6 +17,8 @@
 5. Один дефект — одна запись: не дублируй его в разных критериях одного требования.
 6. Не выдумывай дефекты ради количества. Если требование качественное — статусы ok и пустой defects.
 
+{RULE_HINTS}
+
 Схема ответа:
 {"reviews": [{"rid": "REQ-01", "criteria": {"necessary": {"status": "ok", "comment": "…"}, "appropriate": {"status": "ok", "comment": "…"}, "unambiguous": {"status": "warn", "comment": "…"}, "complete": {"status": "fail", "comment": "…"}, "singular": {"status": "ok", "comment": "…"}, "feasible": {"status": "ok", "comment": "…"}, "verifiable": {"status": "ok", "comment": "…"}, "correct": {"status": "ok", "comment": "…"}, "conforming": {"status": "na", "comment": "…"}, "consistent": {"status": "ok", "comment": "…"}}, "defects": [{"criterion": "complete", "severity": "MAJOR", "title": "…", "quote": "…", "related_quotes": ["…"], "explanation": "…", "recommendation": "…"}], "rewrite": "…", "test_ideas": ["…"], "questions": ["…"]}]}
 

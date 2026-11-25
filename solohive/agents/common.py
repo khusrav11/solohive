@@ -170,3 +170,14 @@ def defect_to_finding(doc: SourceDocument, raw: RawDefect, *, scope: str, source
         evidence=evidence,
         sources=[source],
     )
+
+
+def rule_hints(findings: list[Finding]) -> str:
+    """Короткий список находок правил для LLM-агентов: не дублировать, а углублять."""
+    rows = [f for f in findings if f.status == "active" and any(x.startswith("rule:") for x in f.sources)]
+    if not rows:
+        return ""
+    lines = [f"- {f.severity.value} | строка {f.primary.line if f.primary else '—'} | {f.title}" for f in rows]
+    return ("Детерминированные правила уже нашли эти дефекты (они попадут в отчёт автоматически). Не повторяй их; "
+            "сосредоточься на смысловых дефектах, которые правилами не ловятся. Упоминай их, только если "
+            "добавляешь новый смысл (последствия, связь с другими требованиями):\n" + "\n".join(lines))

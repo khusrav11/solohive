@@ -38,6 +38,8 @@ def source_label(f: Finding) -> str:
             names.append("LLM-рецензент")
         elif s.startswith("llm:system"):
             names.append("LLM-системный аналитик")
+        elif s == "llm:scenario":
+            names.append("LLM-сценарист")
         else:
             names.append(s)
     return " + ".join(dict.fromkeys(names))
@@ -200,6 +202,22 @@ def render(report: Report) -> str:
             for f in sorted(grouped[c.code], key=lambda x: x.fid):
                 render_finding(f, L)
             L.append("")
+
+    # --- 4.3 сценарии -------------------------------------------------------------------------------------
+    if report.scenarios:
+        sc = report.scenarios
+        cnt = Counter(x.verdict for x in sc)
+        L += ["### 4.3. Сценарный анализ: проигрывание ТЗ на конкретных примерах", "",
+              f"Агент-сценарист проиграл **{len(sc)}** сценариев и проверил, даёт ли документ однозначный ожидаемый "
+              f"результат: ✅ определено — {cnt['defined']}, ❓ не определено — {cnt['undefined']}, "
+              f"⚔️ противоречиво — {cnt['contradictory']}.", "",
+              "| ID | Сценарий | Дано / Когда | Что предписывает ТЗ | Итог | Дефект |",
+              "| :--- | :--- | :--- | :--- | :---: | :--- |"]
+        for x in sc:
+            where = f" ({x.evidence[0].location.split(' · ')[-1]})" if x.evidence else ""
+            L.append(f"| {x.sid} | {cell(x.title, 80)} | {cell(x.given_when, 220)} | {cell(x.spec_says, 220)}{where} | "
+                     f"{x.icon} | {x.finding or '—'} |")
+        L.append("")
 
     # --- 5. сводка -----------------------------------------------------------------------------------------
     with_def = {rid for f in act if f.scope == "requirement" for rid in f.rids}

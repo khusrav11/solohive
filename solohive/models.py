@@ -82,6 +82,7 @@ class Finding(BaseModel):
     sources: list[str] = Field(default_factory=list)   # llm:reviewer, rule:R-HTTP-SAFE ...
     status: Literal["active", "dropped", "merged"] = "active"
     note: str = ""                                     # причина удаления/объединения
+    scenario: str = ""                                 # S-xx, если найдено сценарным анализом
 
     @property
     def primary(self) -> Evidence | None:
@@ -97,6 +98,22 @@ class RequirementReview(BaseModel):
     criteria: list[CriterionEval] = Field(default_factory=list)
     rewrite: str = ""
     test_ideas: list[str] = Field(default_factory=list)
+
+
+class Scenario(BaseModel):
+    """Сценарий, «проигранный» по тексту ТЗ: определяет ли документ результат."""
+
+    sid: str = ""
+    title: str
+    given_when: str = ""
+    spec_says: str = ""
+    verdict: Literal["defined", "undefined", "contradictory"] = "undefined"
+    evidence: list[Evidence] = Field(default_factory=list)
+    finding: str = ""      # fid связанной находки
+
+    @property
+    def icon(self) -> str:
+        return {"defined": "✅", "undefined": "❓", "contradictory": "⚔️"}[self.verdict]
 
 
 class Question(BaseModel):
@@ -161,6 +178,7 @@ class Report(BaseModel):
     reviews: dict[str, RequirementReview] = Field(default_factory=dict)
     findings: list[Finding] = Field(default_factory=list)
     set_evals: list[CriterionEval] = Field(default_factory=list)
+    scenarios: list[Scenario] = Field(default_factory=list)
     questions: list[Question] = Field(default_factory=list)
     verdict: Verdict = Field(default_factory=Verdict)
     calls: list[CallRecord] = Field(default_factory=list)

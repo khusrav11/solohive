@@ -2,7 +2,8 @@
 
 Граф выполнения (стрелка — зависимость, «∥» — параллельно):
 
-    Загрузчик → [ Инспектор (правила) ∥ Нарезчик ∥ Системные аналитики ×2 ]
+    Загрузчик → Инспектор (правила, мгновенно)
+              → [ Нарезчик ∥ Системные аналитики ×2 ∥ Сценарист ]   (знают находки правил)
               → Рецензенты (пакеты параллельно)
               → Привязка цитат + дедупликация → Критик → Судья (вердикт по правилам)
               → Интервьюер (вопросы + обоснование) → Отчёт
@@ -19,7 +20,9 @@ from . import APP_NAME
 from .agents.analyst import analyze_set
 from .agents.critic import deterministic_dedupe, verify
 from .agents.interviewer import STATUS_RU, fallback_questions, interview
+from .agents.common import rule_hints
 from .agents.reviewer import review_all
+from .agents.scenarist import play_scenarios
 from .agents.segmenter import segment
 from .config import Settings
 from .linters import RULES, run_linters
@@ -57,23 +60,31 @@ async def run_pipeline(input_path: str | Path, settings: Settings, llm: BaseLLM 
             times[name] = round(time.monotonic() - s, 2)
             return res
 
-        seg_task = asyncio.create_task(timed("Нарезчик", segment(doc, llm)))
-        set_task = asyncio.create_task(timed("Системные аналитики", analyze_set(doc, llm)))
         s = time.monotonic()
         lint = run_linters(doc)
         times["Инспектор (правила)"] = round(time.monotonic() - s, 3)
         progress.step("🔍", "Инспектор (правила)", f"{findings_n(len([f for f in lint if f.status == 'active']))} "
                                                   f"по {len(RULES)} правилам, без LLM")
+        hints = rule_hints(lint)
+        seg_task = asyncio.create_task(timed("Нарезчик", segment(doc, llm)))
+        set_task = asyncio.create_task(timed("Системные аналитики", analyze_set(doc, llm, hints)))
+        scen_task = asyncio.create_task(timed("Сценарист", play_scenarios(doc, llm, hints)))
 
         reqs, w = await seg_task
         warnings += w
         progress.step("✂️ ", "Нарезчик", f"{nform(len(reqs), 'требование', 'требования', 'требований')} с точными цитатами")
 
         # --- Раунд 2: рецензенты (пакетами параллельно), системный анализ продолжает работать ---------------
-        review_task = asyncio.create_task(timed("Рецензенты", review_all(doc, reqs, llm, settings.review_batch_size)))
+        review_task = asyncio.create_task(timed("Рецензенты", review_all(doc, reqs, llm, settings.review_batch_size,
+                                                                         hints)))
         set_evals, set_findings, set_q, w = await set_task
         warnings += w
         progress.step("🧭", "Системные аналитики", f"{findings_n(len(set_findings))} по набору требований")
+        scenarios, scen_findings, w = await scen_task
+        warnings += w
+        gaps = sum(1 for x in scenarios if x.verdict != "defined")
+        progress.step("🎭", "Сценарист", f"{nform(len(scenarios), 'сценарий', 'сценария', 'сценариев')} проиграно, "
+                                        f"не определено или противоречиво: {gaps}")
         reviews, rev_findings, rev_q, w = await review_task
         warnings += w
         n_batches = -(-len(reqs) // settings.review_batch_size)
@@ -82,7 +93,7 @@ async def run_pipeline(input_path: str | Path, settings: Settings, llm: BaseLLM 
                                          f"{findings_n(len(rev_findings))}")
 
         # --- Сборка, привязка, дедупликация ------------------------------------------------------------------
-        findings = lint + rev_findings + set_findings
+        findings = lint + rev_findings + set_findings + scen_findings
         unverified = _attach(findings, reqs)
         for i, f in enumerate(findings, start=1):
             f.fid = f"F-{i:03d}"
@@ -108,6 +119,7 @@ async def run_pipeline(input_path: str | Path, settings: Settings, llm: BaseLLM 
         progress.step("💬", "Интервьюер и судья", f"{nform(len(questions), 'уточняющий вопрос', 'уточняющих вопроса', 'уточняющих вопросов')}; "
                                                  f"разработка: {STATUS_RU[verdict.dev_status]}")
         _renumber(findings, questions, verdict)
+        _link_scenarios(scenarios, findings)
 
         warnings += llm.warnings
         if settings.provider == "offline":
@@ -125,7 +137,7 @@ async def run_pipeline(input_path: str | Path, settings: Settings, llm: BaseLLM 
             input_tokens=sum(c.input_tokens for c in calls), output_tokens=sum(c.output_tokens for c in calls),
         )
         report = Report(passport=passport, requirements=reqs, reviews=reviews, findings=findings,
-                        set_evals=set_evals, questions=questions, verdict=verdict, calls=calls,
+                        set_evals=set_evals, scenarios=scenarios, questions=questions, verdict=verdict, calls=calls,
                         stage_times=times, warnings=warnings)
         report.stage_times["raw_findings"] = raw_total
         return report
@@ -157,6 +169,18 @@ def _attach(findings: list[Finding], reqs: list[Requirement]) -> int:
         if f.scope == "requirement" and not f.rids:
             f.scope = "set"
     return unverified
+
+
+def _link_scenarios(scenarios, findings: list[Finding]) -> None:
+    by_scen = {f.scenario: f for f in findings if f.scenario}
+    for sc in scenarios:
+        f = by_scen.get(sc.sid)
+        if f is None:
+            continue
+        if f.status == "active":
+            sc.finding = f.fid
+        elif f.status == "merged" and f.note.startswith("объединено с "):
+            sc.finding = f.note.split()[2].rstrip(":")
 
 
 def compute_verdict(reqs: list[Requirement], findings: list[Finding]) -> Verdict:

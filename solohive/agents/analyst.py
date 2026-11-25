@@ -25,13 +25,13 @@ VIEWS = {
 }
 
 
-async def analyze_set(doc: SourceDocument, llm: BaseLLM
+async def analyze_set(doc: SourceDocument, llm: BaseLLM, hints: str = ""
                       ) -> tuple[list[CriterionEval], list[Finding], list[str], list[str]]:
     numbered = doc.numbered()
 
     async def run(view: str):
         prompt, _ = VIEWS[view]
-        user = fill(load_prompt(prompt), TITLE=doc.title, DOC=numbered)
+        user = fill(load_prompt(prompt), TITLE=doc.title, DOC=numbered, RULE_HINTS=hints)
         return await llm.generate_json(system_prompt(), user, SetResponse, stage=f"set:{view}")
 
     results = await asyncio.gather(*(run(v) for v in VIEWS), return_exceptions=True)

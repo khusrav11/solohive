@@ -73,3 +73,19 @@ def test_fabricated_quote_is_dropped_not_attached(settings, mock_llm):
     fake = [f for f in report.findings if f.title == "Выдуманная цитата"]
     assert fake and fake[0].status == "dropped"
     assert "цитат" in fake[0].note
+
+
+def test_scenarios_reported_and_linked(settings, mock_llm, tmp_path):
+    report = run(settings, mock_llm)
+    assert [s.verdict for s in report.scenarios] == ["defined", "undefined"]
+    assert report.scenarios[0].evidence and report.scenarios[0].evidence[0].verified
+    assert report.scenarios[1].finding.startswith("D-")
+    md = write_report(report, tmp_path / "r.md")[0].read_text(encoding="utf-8")
+    assert "### 4.3. Сценарный анализ" in md and "S-02" in md
+
+
+def test_rule_hints_passed_to_llm_agents(settings, mock_llm):
+    run(settings, mock_llm)
+    review_prompts = [u for stage, _, u in mock_llm.prompts if stage.startswith(("review", "set:", "scenarios"))]
+    assert review_prompts and all("Детерминированные правила уже нашли" in u for u in review_prompts)
+    assert all("HTTP GET" in u for u in review_prompts)

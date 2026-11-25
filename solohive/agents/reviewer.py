@@ -39,8 +39,8 @@ def _batch_block(batch: list[Requirement]) -> str:
     )
 
 
-async def review_all(doc: SourceDocument, reqs: list[Requirement], llm: BaseLLM, batch_size: int
-                     ) -> tuple[dict[str, RequirementReview], list[Finding], list[str], list[str]]:
+async def review_all(doc: SourceDocument, reqs: list[Requirement], llm: BaseLLM, batch_size: int,
+                     hints: str = "") -> tuple[dict[str, RequirementReview], list[Finding], list[str], list[str]]:
     """Возвращает: оценки по требованиям, находки, вопросы-кандидаты, предупреждения."""
     template = load_prompt("review")
     numbered = doc.numbered()
@@ -48,7 +48,8 @@ async def review_all(doc: SourceDocument, reqs: list[Requirement], llm: BaseLLM,
     by_id = {r.rid: r for r in reqs}
 
     async def run_batch(idx: int, batch: list[Requirement]):
-        user = fill(template, TITLE=doc.title, DOC=numbered, ALL_REQS=brief, BATCH=_batch_block(batch))
+        user = fill(template, TITLE=doc.title, DOC=numbered, ALL_REQS=brief, BATCH=_batch_block(batch),
+                    RULE_HINTS=hints)
         return await llm.generate_json(system_prompt(), user, ReviewResponse, stage=f"review#{idx + 1}")
 
     batches = _batches(reqs, batch_size)
