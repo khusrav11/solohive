@@ -138,7 +138,7 @@ async def run_pipeline(input_path: str | Path, settings: Settings, llm: BaseLLM 
         )
         report = Report(passport=passport, requirements=reqs, reviews=reviews, findings=findings,
                         set_evals=set_evals, scenarios=scenarios, questions=questions, verdict=verdict, calls=calls,
-                        stage_times=times, warnings=warnings)
+                        stage_times=times, warnings=warnings, source_lines=[ln.text for ln in doc.lines])
         report.stage_times["raw_findings"] = raw_total
         return report
     finally:
