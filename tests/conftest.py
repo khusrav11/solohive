@@ -90,7 +90,21 @@ def _interview(stage, system, user):
                         "priorities": [{"fids": ids[:1], "action": "Устранить противоречия Ф-3/Ф-4"}]}}
 
 
-RESPONDERS = {"segment": _segment, "review": _review, "set:": _set, "critic": _critic, "interview": _interview}
+def _scenarios(stage, system, user):
+    return {"scenarios": [
+        {"title": "Покупка ровно до порога", "given_when": "Дано: расходы 48 500, порог 50 000; Когда: покупка 1 500",
+         "spec_says": "Ф-3: push при достижении", "verdict": "defined",
+         "quotes": ["равной порогу или выше, клиент получает push"], "defect": None},
+        {"title": "Возврат январской покупки в феврале", "given_when": "Дано: push за январь отправлен; Когда: 5 февраля возврат",
+         "spec_says": "документ не определяет повторный push", "verdict": "undefined",
+         "quotes": ["Возврат уменьшает расходы месяца исходной покупки"],
+         "defect": {"criterion": "complete", "severity": "MAJOR", "title": "Не определён повторный push после возврата",
+                    "explanation": "После возврата сумма снова ниже порога.", "recommendation": "Описать правило."}},
+    ]}
+
+
+RESPONDERS = {"segment": _segment, "review": _review, "set:": _set, "scenarios": _scenarios, "critic": _critic,
+              "interview": _interview}
 
 
 @pytest.fixture
