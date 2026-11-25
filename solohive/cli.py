@@ -36,6 +36,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--batch-size", type=int, help="требований в одном запросе рецензента (по умолчанию 6)")
     p.add_argument("--fast", action="store_true",
                    help="быстрый режим: короткие рассуждения модели и крупные пакеты (быстрее, чуть менее глубоко)")
+    p.add_argument("--ask", action="store_true",
+                   help="после проверки задать уточняющие вопросы в консоли и выпустить исправленную редакцию ТЗ")
+    p.add_argument("--answers", metavar="FILE",
+                   help="файл ответов на вопросы (JSON {\"Q-01\": \"…\"} или строки «Q-01: ответ») — пересмотр без диалога")
     p.add_argument("--offline", action="store_true",
                    help="без LLM: только детерминированные правила (если нет ключа/сети или для быстрой проверки)")
     p.add_argument("--no-cache", action="store_true", help="не использовать кэш ответов LLM")
@@ -81,7 +85,18 @@ def main(argv: list[str] | None = None) -> int:
         print("\nПрервано пользователем.", file=sys.stderr)
         return 130
 
+    if (args.ask or args.answers) and settings.provider != "offline":
+        try:
+            _clarify(report, args, settings, progress, out)
+        except (LLMError, OSError) as exc:
+            progress.warn(f"Режим уточнения не выполнен: {exc}")
+
     paths = write_report(report, out, also_json=not args.no_json)
+    if report.clarification is not None and report.clarification.revised:
+        from .agents.reviser import revised_document
+        rev = Path(out).with_name(Path(out).stem + "_revised.md")
+        rev.write_text(revised_document(report), encoding="utf-8")
+        paths.append(rev)
     act = report.active_findings
     sev = {s: sum(1 for f in act if f.severity == s) for s in Severity}
     v = report.verdict
@@ -97,6 +112,40 @@ def main(argv: list[str] | None = None) -> int:
         progress.warn(w)
     progress.print("")
     return 0
+
+
+def _clarify(report, args, settings, progress, out) -> None:
+    """Режим уточнения: ответы (консоль или файл) → пересмотр дефектов → исправленная редакция требований."""
+    import json
+    import time
+
+    from .agents.reviser import ask_in_console, load_answers, revise
+    from .llm import create_llm
+
+    answers = load_answers(args.answers) if args.answers else ask_in_console(report)
+    if not answers:
+        progress.warn("Ответов нет — пересмотр пропущен.")
+        return
+    saved = Path(out).with_name(Path(out).stem + "_answers.json")
+    saved.parent.mkdir(parents=True, exist_ok=True)
+    saved.write_text(json.dumps(answers, ensure_ascii=False, indent=2), encoding="utf-8")
+    t0 = time.monotonic()
+
+    async def go():
+        llm = create_llm(settings)
+        try:
+            cl = await revise(report, answers, llm)
+            report.calls.extend(llm.calls)
+            return cl
+        finally:
+            await llm.aclose()
+
+    report.clarification = asyncio.run(go())
+    cl = report.clarification
+    report.stage_times["Редактор (уточнение)"] = round(time.monotonic() - t0, 2)
+    fixed = sum(1 for r in cl.resolutions if r.status == "resolved")
+    progress.step("✍️ ", "Редактор", f"ответов {len(cl.answers)}, устранено дефектов {fixed}, "
+                                    f"исправлено/добавлено требований {len(cl.revised)}; ответы сохранены в {saved}")
 
 
 if __name__ == "__main__":  # pragma: no cover

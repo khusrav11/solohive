@@ -103,8 +103,20 @@ def _scenarios(stage, system, user):
     ]}
 
 
+def _revise(stage, system, user):
+    ids = re.findall(r"^(D-\d{2}) \|", user, re.M)
+    return {"resolutions": [{"fid": ids[0], "status": "resolved", "comment": "месяц — по дате покупки"}],
+            "revised": [{"rid": "REQ-02", "doc_id": "Ф-2", "text": "Месяц определяется по дате авторизации "
+                         "покупки в часовом поясе Asia/Almaty (UTC+5).", "fixes": [ids[0]]}],
+            "new_requirements": [{"id": "Ф-5", "section": "Функциональные требования",
+                                  "text": "Приложение читает порог методом GET /alerts/limit.", "fixes": []}],
+            "acceptance": [{"given": "Покупка 31.01 23:58 (UTC+5)", "when": "Проведена 01.02", "then": "Учтена в январе",
+                            "covers": ["Ф-2"]}],
+            "summary": "Уточнён месяц учёта."}
+
+
 RESPONDERS = {"segment": _segment, "review": _review, "set:": _set, "scenarios": _scenarios, "critic": _critic,
-              "interview": _interview}
+              "interview": _interview, "revise": _revise}
 
 
 @pytest.fixture

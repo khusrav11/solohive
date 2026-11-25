@@ -140,6 +140,45 @@ class Verdict(BaseModel):
     priorities: list[Priority] = Field(default_factory=list)
 
 
+class Answer(BaseModel):
+    qid: str
+    question: str = ""
+    answer: str = ""
+
+
+class Resolution(BaseModel):
+    fid: str
+    status: Literal["resolved", "partial", "open"] = "open"
+    comment: str = ""
+
+
+class RevisedRequirement(BaseModel):
+    rid: str = ""                  # REQ-NN для исправленного, пусто для нового
+    doc_id: str | None = None
+    section: str = ""
+    text: str
+    fixes: list[str] = Field(default_factory=list)
+    is_new: bool = False
+
+
+class AcceptanceCase(BaseModel):
+    given: str = ""
+    when: str = ""
+    then: str = ""
+    covers: list[str] = Field(default_factory=list)
+
+
+class Clarification(BaseModel):
+    """Результат режима уточнения: ответы, пересмотр дефектов, исправленная редакция требований."""
+
+    answers: list[Answer] = Field(default_factory=list)
+    resolutions: list[Resolution] = Field(default_factory=list)
+    revised: list[RevisedRequirement] = Field(default_factory=list)
+    acceptance: list[AcceptanceCase] = Field(default_factory=list)
+    summary: str = ""
+    verdict_after: Verdict | None = None
+
+
 class CallRecord(BaseModel):
     stage: str
     model: str
@@ -185,6 +224,7 @@ class Report(BaseModel):
     stage_times: dict[str, float] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
     source_lines: list[str] = Field(default_factory=list)   # текст документа по строкам (для HTML-просмотра)
+    clarification: Clarification | None = None
 
     @property
     def active_findings(self) -> list[Finding]:

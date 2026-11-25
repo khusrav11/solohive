@@ -29,7 +29,7 @@ def test_report_has_all_required_sections(settings, mock_llm, tmp_path):
     assert "Уведомление о расходах по карте" in md
     assert "mock-model" in md
     assert "Версия агента" in md
-    data = json.loads(paths[1].read_text(encoding="utf-8"))
+    data = json.loads(next(p for p in paths if p.suffix == ".json").read_text(encoding="utf-8"))
     assert data["passport"]["document_lines"] > 100
 
 
@@ -100,3 +100,24 @@ def test_html_report_is_selfcontained_and_linked(settings, mock_llm, tmp_path):
     first = report.active_findings[0]
     assert f'id="{first.fid}"' in page and f'data-fid="{first.fid}"' in page   # дефект ↔ пометка на полях
     assert 'id="L39"' in page
+
+
+def test_clarification_mode_revises_and_writes_revised_spec(settings, mock_llm, tmp_path):
+    from solohive.agents.reviser import load_answers, revise, revised_document
+
+    report = run(settings, mock_llm)
+    ans_file = tmp_path / "answers.txt"
+    ans_file.write_text("Q-01: а\nQ-99: лишний\n", encoding="utf-8")
+    answers = load_answers(ans_file)
+    assert answers == {"Q-01": "а", "Q-99": "лишний"}
+    report.clarification = asyncio.run(revise(report, answers, mock_llm))
+    cl = report.clarification
+    assert cl.resolutions[0].status == "resolved"
+    assert [r.is_new for r in cl.revised] == [False, True]
+    assert cl.verdict_after is not None
+    paths = write_report(report, tmp_path / "r.md")
+    md = paths[0].read_text(encoding="utf-8")
+    assert "## 8. Уточнение" in md and "Asia/Almaty" in md
+    assert 'data-tab="clarify"' in paths[1].read_text(encoding="utf-8")
+    doc = revised_document(report)
+    assert "**Было:**" in doc and "Ф-5" in doc
