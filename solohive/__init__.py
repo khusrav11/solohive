@@ -4,5 +4,5 @@
 а оркестратор собирает их результаты в доказательный отчёт.
 """
 
-__version__ = "1.1.0"
+__version__ = "1.1.1"
 APP_NAME = "SoloHive Requirements Validator"
