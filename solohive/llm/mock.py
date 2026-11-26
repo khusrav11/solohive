@@ -28,9 +28,9 @@ class MockLLM(BaseLLM):
                 return LLMResponse(text=text, model=model, input_tokens=len(user) // 4, output_tokens=len(text) // 4)
         return LLMResponse(text="{}", model=model)
 
-    async def generate(self, system, user, *, stage, json_schema=None, effort=None):
+    async def generate(self, system, user, *, stage, json_schema=None, effort=None, cache=True):
         self._current_stage = stage
-        return await super().generate(system, user, stage=stage, json_schema=json_schema, effort=effort)
+        return await super().generate(system, user, stage=stage, json_schema=json_schema, effort=effort, cache=cache)
 
 
 class OfflineLLM(BaseLLM):
@@ -38,6 +38,6 @@ class OfflineLLM(BaseLLM):
 
     provider = "offline"
 
-    async def generate(self, system, user, *, stage, json_schema=None, effort=None):
+    async def generate(self, system, user, *, stage, json_schema=None, effort=None, cache=True):
         from .base import LLMError
         raise LLMError("офлайн-режим: LLM не используется")

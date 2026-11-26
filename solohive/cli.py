@@ -112,6 +112,11 @@ def main(argv: list[str] | None = None) -> int:
         progress.warn(w)
     if len(report.warnings) > 6:
         progress.warn(f"…и ещё {len(report.warnings) - 6} предупреждений — полный список в приложении B отчёта.")
+    incomplete = any(("не обработали" in w or "не выполнен" in w or "Нарезка LLM не удалась" in w)
+                     for w in report.warnings)
+    if incomplete and settings.provider != "offline":
+        progress.print("\n  💡 [bold]Часть этапов не выполнена из-за перегрузки Gemini.[/bold] Повторите ту же команду через "
+                       "1–2 минуты: готовые ответы возьмутся из кэша мгновенно, дозапросится только недостающее.")
     progress.print("")
     return 0
 

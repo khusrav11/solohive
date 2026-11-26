@@ -52,6 +52,8 @@ async def run_pipeline(input_path: str | Path, settings: Settings, llm: BaseLLM 
                                      f"{nform(len(doc.tables), 'таблица', 'таблицы', 'таблиц')}")
     own_llm = llm is None
     llm = llm or create_llm(settings)
+    if progress.enabled:
+        llm.on_wait = progress.note
     try:
         # --- Раунд 1: правила ∥ нарезка ∥ системный анализ ------------------------------------------------
         async def timed(name, coro):

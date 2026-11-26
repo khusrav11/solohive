@@ -31,5 +31,8 @@ class Progress:
     def step(self, icon: str, name: str, info: str) -> None:
         self.print(f"  [dim]{self.elapsed():6.1f}s[/dim]  {icon} [bold]{name:<22}[/bold] → {info}")
 
+    def note(self, text: str) -> None:
+        self.print(f"  [dim]{self.elapsed():6.1f}s  ⏳ {text}[/dim]")
+
     def warn(self, text: str) -> None:
         self.print(f"  ⚠️  [yellow]{text}[/yellow]")

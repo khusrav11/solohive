@@ -62,7 +62,7 @@ class Settings:
     timeout: float = 240.0
     max_retries: int = 5
     max_wait: float = 150.0          # сколько максимум ждать ответа на один запрос с учётом повторов, с
-    cooldown_base: float = 20.0      # «остывание» модели после перегрузки (503): 20 → 40 → 90 с
+    cooldown_base: float = 8.0       # «остывание» модели после перегрузки (503): 8 → 16 → 32 → 45 с
     thinking_level: str | None = None
     review_batch_size: int = 12
     cache_dir: Path | None = Path(".solohive_cache")
