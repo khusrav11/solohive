@@ -196,3 +196,23 @@ def test_only_valid_json_is_cached(tmp_path):
     assert asyncio.run(llm2.generate_json("S", "U", M, stage="t")).ok
     assert n["calls"] == 2                                     # второй прогон: валидный ответ из кэша
     assert llm2.calls[-1].cached
+
+
+def test_late_stage_always_gets_one_attempt_after_breaker():
+    """После срабатывания предохранителя поздний этап (критик/интервьюер) всё равно пробует хотя бы раз."""
+    state = {"down": True, "calls": 0}
+
+    def handler(req):
+        state["calls"] += 1
+        if state["down"]:
+            return httpx.Response(503, json={"error": {"code": 503, "status": "UNAVAILABLE", "message": "high demand"}})
+        return httpx.Response(200, json=OK_BODY)
+
+    llm = make(handler, model="m", cooldown_base=30.0, max_wait=0.3)
+    for i in range(3):                                    # три провала подряд → предохранитель
+        with pytest.raises(Exception):
+            asyncio.run(llm.generate("S", f"U{i}", stage=f"s{i}"))
+    assert llm._tripped
+    state["down"] = False                                 # Google «отпустило», но модель ещё «остывает» 30 с
+    r = asyncio.run(llm.generate("S", "late", stage="interview"))
+    assert r.text == '{"ok": true}'

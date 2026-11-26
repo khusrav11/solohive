@@ -209,7 +209,11 @@ class BaseLLM:
                 err = LLMError(f"[{stage}] все модели недоступны ({why})")
                 self._record_error(stage, self._chain[-1], attempts, str(err))
                 raise err
-            if attempts >= self.settings.max_retries + 3 or time.monotonic() - started + wait > budget:
+            over = attempts >= self.settings.max_retries + 3 or time.monotonic() - started + wait > budget
+            if over and attempts == 0:
+                wait = 0.0      # этап ещё ни разу не пробовал — делаем хотя бы одну попытку сразу, без ожидания
+                over = False
+            if over:
                 reason = short_reason(last) if last else "превышено время ожидания"
                 err = LLMError(f"[{stage}] не удалось получить ответ: {reason}")
                 self._record_error(stage, model, attempts, str(err))
