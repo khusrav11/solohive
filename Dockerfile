@@ -4,5 +4,5 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 # Ключ передаётся при запуске:  docker run --env-file .env -v "$PWD/reports:/app/reports" solohive \
-#   --input examples/requirements.pdf --output reports/report.md
+#   --input examples/requirements.pdf --output reports/report.pdf
 ENTRYPOINT ["python", "-m", "solohive"]

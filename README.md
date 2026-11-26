@@ -18,7 +18,8 @@ SoloHive проводит **статическую проверку докуме
 | Вердикт до уточнения | разработка ⛔ НЕ ГОТОВ · тестирование ⛔ НЕ ГОТОВ |
 | Уточнение (`--ask`) | 11 вопросов → 11 ответов → устранено 30 дефектов, в том числе **все 5 критичных** |
 | Вердикт после уточнения | разработка ⚠️ ГОТОВ С УСЛОВИЯМИ · тестирование ⚠️ ГОТОВ С УСЛОВИЯМИ |
-| Исправленное ТЗ | [`reports/report_revised.md`](reports/report_revised.md): «было → стало», 3 новых требования, 6 критериев приёмки |
+| Отчёт | [`reports/report.pdf`](reports/report.pdf), он же в [`.docx`](reports/report.docx), [`.md`](reports/report.md), [`.html`](reports/report.html), [`.json`](reports/report.json) |
+| Исправленное ТЗ | [`reports/report_revised.pdf`](reports/report_revised.pdf) (и [`.md`](reports/report_revised.md)): «было → стало», 3 новых требования, 6 критериев приёмки |
 | Время и стоимость | ≈ 6 мин анализа, ≈ $0.45 за прогон (11 вызовов LLM, ~110 тыс. токенов на вход) |
 
 ---
@@ -38,30 +39,33 @@ cp .env.example .env                                    # Windows: copy .env.exa
 #    откройте .env и впишите GEMINI_API_KEY=...
 
 # 3. Запустить проверку одной командой
-python -m solohive --input examples/requirements.pdf --output reports/report.md
+python -m solohive --input examples/requirements.pdf --output reports/report.pdf
 ```
 
 Результат прогона:
-- **`reports/report.md`** — отчёт по разделу 6 ТЗ;
+- **`reports/report.pdf`** — отчёт по разделу 6 ТЗ. Формат задаётся расширением `--output`: `.pdf`, `.docx` (Word), `.md`, `.html`, `.json`. Без `--output` отчёт выходит **в формате входного документа**: PDF → PDF, DOCX → DOCX, Markdown → Markdown;
+- **`reports/report.md`** — тот же отчёт в Markdown (кладётся рядом всегда);
 - **`reports/report.html`** — тот же отчёт в интерактивном виде: дефекты рядом с размеченным документом, фильтры, поиск, матрица, сценарии. Откройте в браузере, работает офлайн;
 - **`reports/report.json`** — машиночитаемая версия для CI и других систем.
+
+Готовый отчёт можно перевыпустить в другом формате без нового прогона модели: `python -m solohive.render reports/report.json reports/report.docx`.
 
 Ход работы роя виден в консоли.
 
 ### Режим уточнения: агент спрашивает — вы отвечаете — агент исправляет ТЗ
 
 ```bash
-python -m solohive --input examples/requirements.pdf --output reports/report.md --ask
+python -m solohive --input examples/requirements.pdf --output reports/report.pdf --ask
 ```
 
-После проверки агент задаёт уточняющие вопросы прямо в консоли (ответ — текстом или буквой варианта, Enter — пропустить). Затем агент-редактор пересматривает дефекты (устранён / частично / открыт), пересчитывает вердикт и выпускает **`reports/report_revised.md`** — исправленную редакцию требований («было → стало», новые требования, критерии приёмки). Ответы сохраняются в `reports/report_answers.json`. Повторить без диалога можно так: `--answers reports/report_answers.json`.
+После проверки агент задаёт уточняющие вопросы прямо в консоли (ответ — текстом или буквой варианта, Enter — пропустить). Затем агент-редактор пересматривает дефекты (устранён / частично / открыт), пересчитывает вердикт и выпускает **`reports/report_revised.pdf`** (в формате отчёта, плюс `.md`) — исправленную редакцию требований («было → стало», новые требования, критерии приёмки). Ответы сохраняются в `reports/report_answers.json`. Повторить без диалога можно так: `--answers reports/report_answers.json`.
 
 ### Запуск в Docker (по желанию)
 
 ```bash
 docker build -t solohive .
 docker run --rm --env-file .env -v "$PWD/reports:/app/reports" solohive \
-  --input examples/requirements.pdf --output reports/report.md
+  --input examples/requirements.pdf --output reports/report.pdf
 ```
 
 ### Как получить ключ LLM
@@ -82,7 +86,7 @@ python -m solohive <путь к требованиям> <путь к отчёт�
 | Параметр | Назначение |
 | :--- | :--- |
 | `--input`, `-i` | Файл требований: **PDF**, DOCX, Markdown, TXT, HTML |
-| `--output`, `-o` | Файл отчёта: `.md` (по умолчанию), `.html` или `.json`. Без параметра: `reports/<имя>_report.md` |
+| `--output`, `-o` | Файл отчёта: `.pdf`, `.docx`, `.md`, `.html` или `.json`. Без параметра: `reports/<имя>_report` в формате входного файла |
 | `--model` | Другая модель, например `--model gemini-3.6-flash` |
 | `--provider` | `gemini` (по умолчанию), `openrouter`, `openai`, `anthropic`, `ollama` |
 | `--fast` | Быстрый режим: короткие рассуждения модели, крупные пакеты |
@@ -207,7 +211,7 @@ flowchart LR
 
 ```bash
 pip install pytest
-python -m pytest -q                    # 47 тестов: загрузчики, правила, LLM-слой и устойчивость к сбоям, незнакомые ТЗ, сквозной прогон, HTML, уточнение
+python -m pytest -q                    # 57 тестов: загрузчики, правила, LLM-слой и устойчивость к сбоям, незнакомые ТЗ, сквозной прогон, HTML, уточнение
 ```
 
 Тесты проверяют, в частности:
@@ -216,7 +220,7 @@ python -m pytest -q                    # 47 тестов: загрузчики, 
 - агент обобщается на **незнакомые ТЗ** другого стиля: PDF из Word, текст без разметки, другая нумерация;
 - выдуманные моделью цитаты и требования отбрасываются;
 - формат REST-запроса к Gemini, автозамена модели при 404, ожидание при 429;
-- отчёт содержит все разделы ТЗ.
+- отчёт содержит все разделы ТЗ и выпускается в PDF и DOCX с кириллицей; формат по умолчанию совпадает с форматом входа.
 
 Полнота отчёта сверяется с контрольным списком эксперта (40 дефектов учебного документа). Агент этот файл не читает:
 
@@ -240,7 +244,9 @@ solohive/
 │   ├── agents/             # ✂️ нарезчик, 🔬 рецензенты, 🧭 аналитики, 🎭 сценарист, ⚖️ критик, 💬 интервьюер, ✍️ редактор
 │   ├── prompts/            # промпты агентов (Markdown, на русском)
 │   ├── llm/                # Gemini (REST), OpenAI-совместимые, Anthropic; повторы, кэш, автозамена модели
-│   ├── report/             # отчёт: Markdown, интерактивный HTML, JSON
+│   ├── report/             # отчёт: Markdown, PDF, DOCX, интерактивный HTML, JSON
+│   ├── fonts/              # шрифт DejaVu (кириллица, ₸) для PDF
+│   ├── render.py           # перевыпуск отчёта из JSON в другом формате
 │   └── evaluate.py         # оценка полноты по контрольному списку
 ├── examples/               # проверяемый документ организаторов (MD, PDF, DOCX)
 ├── reports/                # отчёты прогонов
