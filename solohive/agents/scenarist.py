@@ -5,7 +5,7 @@ from __future__ import annotations
 from pydantic import Field
 
 from ..document import SourceDocument
-from ..llm.base import BaseLLM, FatalLLMError
+from ..llm.base import BaseLLM, FatalLLMError, short_reason
 from ..models import Finding, Scenario
 from .common import Loose, RawDefect, defect_to_finding, fill, ground_evidence, load_prompt, system_prompt
 
@@ -36,7 +36,7 @@ async def play_scenarios(doc: SourceDocument, llm: BaseLLM, hints: str
     except FatalLLMError:
         raise
     except Exception as exc:  # noqa: BLE001
-        return [], [], [f"Сценарный анализ не выполнен: {exc}"]
+        return [], [], [f"Сценарный анализ не выполнен: {short_reason(exc)}"]
     scenarios: list[Scenario] = []
     findings: list[Finding] = []
     for i, raw in enumerate([r for r in resp.scenarios if r.title.strip()], start=1):

@@ -8,7 +8,7 @@ from pydantic import Field
 
 from .. import criteria as C
 from ..document import SourceDocument
-from ..llm.base import BaseLLM, FatalLLMError
+from ..llm.base import BaseLLM, FatalLLMError, short_reason
 from ..models import CriterionEval, Finding
 from .common import Loose, RawDefect, coerce_criteria, defect_to_finding, fill, load_prompt, norm_status, system_prompt
 
@@ -43,7 +43,7 @@ async def analyze_set(doc: SourceDocument, llm: BaseLLM, hints: str = ""
         if isinstance(res, FatalLLMError):
             raise res
         if isinstance(res, Exception):
-            warnings.append(f"Системный анализ ({view}) не выполнен: {res}")
+            warnings.append(f"Системный анализ ({view}) не выполнен: {short_reason(res)}")
             continue
         for code, rc in coerce_criteria(res.set_criteria).items():
             canon = C.canonical(code, "set")

@@ -33,7 +33,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("-o", "--output", help="путь к файлу отчёта (по умолчанию reports/<имя>_report.md)")
     p.add_argument("--provider", choices=["gemini", "openai", "anthropic", "ollama"], help="провайдер LLM (иначе из .env)")
     p.add_argument("--model", help="модель LLM (иначе из .env); отключает автозамену модели")
-    p.add_argument("--batch-size", type=int, help="требований в одном запросе рецензента (по умолчанию 6)")
+    p.add_argument("--batch-size", type=int, help="требований в одном запросе рецензента (по умолчанию 12)")
     p.add_argument("--fast", action="store_true",
                    help="быстрый режим: короткие рассуждения модели и крупные пакеты (быстрее, чуть менее глубоко)")
     p.add_argument("--ask", action="store_true",
@@ -62,7 +62,7 @@ def main(argv: list[str] | None = None) -> int:
                                      use_cache=not args.no_cache)
         if args.fast:
             settings.thinking_level = settings.thinking_level or "low"
-            settings.review_batch_size = 8
+            settings.review_batch_size = 16
         if args.batch_size:
             settings.review_batch_size = max(1, args.batch_size)
     except ConfigError as exc:
@@ -108,8 +108,10 @@ def main(argv: list[str] | None = None) -> int:
                    f"Вопросов: {len(report.questions)}")
     progress.print(f"     Разработка: [bold]{STATUS_RU[v.dev_status]}[/bold] · Тестирование: "
                    f"[bold]{STATUS_RU[v.test_status]}[/bold]")
-    for w in report.warnings:
+    for w in report.warnings[:6]:
         progress.warn(w)
+    if len(report.warnings) > 6:
+        progress.warn(f"…и ещё {len(report.warnings) - 6} предупреждений — полный список в приложении B отчёта.")
     progress.print("")
     return 0
 
