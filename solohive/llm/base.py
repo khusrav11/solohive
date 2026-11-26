@@ -69,7 +69,7 @@ def short_reason(exc: BaseException) -> str:
     msg = _re.sub(r"^\[[^\]]+\]\s*", "", str(exc))
     low = msg.lower()
     if "503" in msg or "overload" in low or "high demand" in low or "unavailable" in low:
-        return "сервис Gemini перегружен (503)"
+        return "сервис модели перегружен (503)"
     if "квот" in low or "quota" in low or "429" in msg:
         return "исчерпана квота или лимит запросов (429)"
     if "не найдена" in low or "404" in msg:
@@ -175,6 +175,11 @@ class BaseLLM:
             self.warnings.append(f"Модель {model} исключена: {self._dead[model]}{tail}.")
 
     # --- основной вызов ----------------------------------------------------------
+    @property
+    def _who(self) -> str:
+        """Как назвать сервис в сообщениях об ожидании: «Gemini» или нейтрально."""
+        return "Gemini" if "gemini" in (self.settings.model or "").lower() else "Сервис модели"
+
     def _notify(self, text: str) -> None:
         if self.on_wait and time.monotonic() - self._last_notice > 12:
             self._last_notice = time.monotonic()
@@ -220,12 +225,12 @@ class BaseLLM:
                 self._failed_in_row += 1
                 if self._failed_in_row >= 3 and not self._tripped:
                     self._tripped = True
-                    self.warnings.append("Gemini долго перегружен: оставшиеся этапы получили короткое ожидание, "
+                    self.warnings.append(f"{self._who} долго перегружен: оставшиеся этапы получили короткое ожидание, "
                                          "чтобы не затягивать прогон. Повторите команду — готовые части возьмутся "
                                          "из кэша, дозапросится только недостающее.")
                 raise err
             if wait > 0:
-                self._notify(f"Gemini перегружен, жду {wait:.0f} с и повторяю ({stage})…")
+                self._notify(f"{self._who} перегружен, жду {wait:.0f} с и повторяю ({stage})…")
                 await asyncio.sleep(wait + random.uniform(0, 1.0))
                 continue
             attempts += 1

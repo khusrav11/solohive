@@ -1,4 +1,4 @@
-"""Клиент для OpenAI и совместимых API (DeepSeek, OpenRouter, Ollama, vLLM)."""
+"""Клиент для OpenAI и совместимых API (OpenRouter, DeepSeek, Ollama, vLLM)."""
 
 from __future__ import annotations
 
@@ -16,10 +16,14 @@ class OpenAICompatLLM(BaseLLM):
         except ImportError as exc:  # pragma: no cover
             raise FatalLLMError("Не установлен пакет openai: pip install openai") from exc
         self._openai = openai
+        headers = None
+        if "openrouter.ai" in (settings.base_url or ""):
+            # необязательная атрибуция приложения в OpenRouter
+            headers = {"HTTP-Referer": "https://github.com/khusrav11/solohive", "X-Title": "SoloHive"}
         self._client = openai.AsyncOpenAI(api_key=settings.api_key, base_url=settings.base_url,
-                                          timeout=settings.timeout, max_retries=0)
-        if settings.provider == "ollama":
-            self.provider = "ollama"
+                                          timeout=settings.timeout, max_retries=0, default_headers=headers)
+        if settings.provider in ("ollama", "openrouter"):
+            self.provider = settings.provider
         # Параметры, которые некоторые модели не принимают, отключаются после первой ошибки 400
         self._use_temperature = True
         self._use_json_format = True
@@ -62,10 +66,18 @@ class OpenAICompatLLM(BaseLLM):
                 raise RateLimited(f"превышен лимит запросов: {exc}") from exc
             except (oa.APITimeoutError, oa.APIConnectionError, oa.InternalServerError) as exc:
                 raise TransientLLMError(f"временная ошибка: {exc}") from exc
+            except oa.APIStatusError as exc:
+                code = getattr(exc, "status_code", 0) or 0
+                if code == 402:
+                    raise FatalLLMError("на счёте провайдера закончились кредиты (402) — пополните баланс") from exc
+                if code in (408, 409, 425) or code >= 500:
+                    raise TransientLLMError(f"временная ошибка ({code}): {exc}") from exc
+                raise FatalLLMError(f"ошибка API ({code}): {exc}") from exc
         else:  # pragma: no cover
             raise TransientLLMError("не удалось подобрать параметры запроса")
         text = resp.choices[0].message.content if resp.choices else None
-        if not text:
+        if not text or len(text.strip()) < 3:
+            # OpenRouter может вернуть 200 с ошибкой провайдера внутри — это повод повторить, а не результат
             raise TransientLLMError("пустой ответ модели")
         usage = resp.usage
         return LLMResponse(text=text, model=model,

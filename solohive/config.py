@@ -6,10 +6,11 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-PROVIDERS = ("gemini", "openai", "anthropic", "ollama", "mock", "offline")
+PROVIDERS = ("gemini", "openrouter", "openai", "anthropic", "ollama", "mock", "offline")
 
 DEFAULT_MODELS = {
     "gemini": "gemini-3.8-flash",
+    "openrouter": "google/gemini-3.8-flash",
     "openai": "gpt-4o-mini",
     "anthropic": "claude-sonnet-5-5",
     "ollama": "qwen2.5:7b",
@@ -20,6 +21,17 @@ DEFAULT_MODELS = {
 # Запасные модели Gemini: при перегрузке основной (503) запрос временно уходит на запасную,
 # при отсутствии квоты модель исключается до конца прогона.
 DEFAULT_GEMINI_FALLBACKS = "gemini-3.6-flash,gemini-3.5-flash-lite"
+
+# OpenRouter: те же модели Gemini через единый OpenAI-совместимый API (оплата картой от $5)
+OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+DEFAULT_OPENROUTER_FALLBACKS = "google/gemini-3.6-flash"
+
+KEY_HINTS = {
+    "gemini": ("GEMINI_API_KEY", "бесплатный ключ Gemini: https://aistudio.google.com/apikey"),
+    "openrouter": ("OPENROUTER_API_KEY", "ключ OpenRouter: https://openrouter.ai/settings/keys"),
+    "openai": ("OPENAI_API_KEY", "ключ OpenAI или совместимого API"),
+    "anthropic": ("ANTHROPIC_API_KEY", "ключ Anthropic: https://console.anthropic.com"),
+}
 
 
 class ConfigError(RuntimeError):
@@ -90,6 +102,11 @@ class Settings:
             api_key = _env("GEMINI_API_KEY") or _env("GOOGLE_API_KEY")
             env_model = _env("GEMINI_MODEL")
             fallbacks = _split(_env("GEMINI_FALLBACK_MODELS", DEFAULT_GEMINI_FALLBACKS))
+        elif provider == "openrouter":
+            api_key = _env("OPENROUTER_API_KEY")
+            base_url = _env("OPENROUTER_BASE_URL", OPENROUTER_BASE_URL)
+            env_model = _env("OPENROUTER_MODEL")
+            fallbacks = _split(_env("OPENROUTER_FALLBACK_MODELS", DEFAULT_OPENROUTER_FALLBACKS))
         elif provider == "openai":
             api_key = _env("OPENAI_API_KEY")
             base_url = _env("OPENAI_BASE_URL")
@@ -106,11 +123,10 @@ class Settings:
         else:  # mock / offline
             env_model = None
 
-        if provider in ("gemini", "openai", "anthropic") and not api_key:
-            key_name = {"gemini": "GEMINI_API_KEY", "openai": "OPENAI_API_KEY", "anthropic": "ANTHROPIC_API_KEY"}[provider]
+        if provider in KEY_HINTS and not api_key:
+            key_name, hint = KEY_HINTS[provider]
             raise ConfigError(
-                f"Не найден ключ {key_name}. Скопируйте .env.example в .env и впишите ключ "
-                f"(для Gemini бесплатный ключ: https://aistudio.google.com/apikey)."
+                f"Не найден ключ {key_name}. Скопируйте .env.example в .env и впишите ключ ({hint})."
             )
 
         # LLM_MODEL переопределяет модель для любого провайдера
@@ -140,6 +156,8 @@ class Settings:
 def _autodetect_provider() -> str:
     if _env("GEMINI_API_KEY") or _env("GOOGLE_API_KEY"):
         return "gemini"
+    if _env("OPENROUTER_API_KEY"):
+        return "openrouter"
     if _env("OPENAI_API_KEY"):
         return "openai"
     if _env("ANTHROPIC_API_KEY"):
