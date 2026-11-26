@@ -103,6 +103,9 @@ def test_cache_returns_same_answer_without_call(tmp_path):
 def test_json_extraction_and_repair():
     assert extract_json('```json\n{"a": [1, 2,],}\n```') == {"a": [1, 2]}
     assert extract_json('Вот ответ: {"x": 1} — готово') == {"x": 1}
+    # многострочная цитата документа с «сырым» переводом строки внутри строки — без повторного запроса
+    assert extract_json('{"quote": "Content-Type: application/json .\nТело не используется."}') == \
+        {"quote": "Content-Type: application/json .\nТело не используется."}
 
     from pydantic import BaseModel
 
