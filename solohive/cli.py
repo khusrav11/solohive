@@ -19,7 +19,7 @@ from .loaders import SUPPORTED, LoadError
 from .models import Severity
 from .pipeline import run_pipeline
 from .progress import Progress
-from .report import write_report
+from .report import DOC_FORMATS, default_report_ext, write_document, write_report
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -28,9 +28,10 @@ def build_parser() -> argparse.ArgumentParser:
         description=f"{APP_NAME}: статическая проверка документа с требованиями (ISO/IEC/IEEE 29148, IEEE 830).",
     )
     p.add_argument("input_pos", nargs="?", metavar="INPUT", help="файл требований (" + ", ".join(sorted(SUPPORTED)) + ")")
-    p.add_argument("output_pos", nargs="?", metavar="OUTPUT", help="файл отчёта (.md, .html или .json)")
+    p.add_argument("output_pos", nargs="?", metavar="OUTPUT", help="файл отчёта (.md, .pdf, .docx, .html или .json)")
     p.add_argument("-i", "--input", help="путь к файлу требований")
-    p.add_argument("-o", "--output", help="путь к файлу отчёта (по умолчанию reports/<имя>_report.md)")
+    p.add_argument("-o", "--output", help="путь к файлу отчёта: .md, .pdf, .docx, .html, .json "
+                   "(по умолчанию reports/<имя>_report в формате входного файла)")
     p.add_argument("--provider", choices=["gemini", "openrouter", "openai", "anthropic", "ollama"], help="провайдер LLM (иначе из .env)")
     p.add_argument("--model", help="модель LLM (иначе из .env); отключает автозамену модели")
     p.add_argument("--batch-size", type=int, help="требований в одном запросе рецензента (по умолчанию 12)")
@@ -55,7 +56,7 @@ def main(argv: list[str] | None = None) -> int:
     if not src:
         build_parser().print_help()
         return 2
-    out = args.output or args.output_pos or str(Path("reports") / f"{Path(src).stem}_report.md")
+    out = args.output or args.output_pos or str(Path("reports") / f"{Path(src).stem}_report{default_report_ext(src)}")
     progress = Progress(enabled=not args.quiet)
     try:
         settings = Settings.from_env(provider="offline" if args.offline else args.provider, model=args.model,
@@ -94,9 +95,11 @@ def main(argv: list[str] | None = None) -> int:
     paths = write_report(report, out, also_json=not args.no_json)
     if report.clarification is not None and report.clarification.revised:
         from .agents.reviser import revised_document
-        rev = Path(out).with_name(Path(out).stem + "_revised.md")
-        rev.write_text(revised_document(report), encoding="utf-8")
-        paths.append(rev)
+        ext = Path(out).suffix.lower() if Path(out).suffix.lower() in DOC_FORMATS else ".md"
+        rev_md = revised_document(report)
+        rev_title = f"{report.passport.document_title} — исправленная редакция требований"
+        for e in dict.fromkeys([ext, ".md"]):
+            paths.append(write_document(rev_md, Path(out).with_name(Path(out).stem + "_revised" + e), rev_title))
     act = report.active_findings
     sev = {s: sum(1 for f in act if f.severity == s) for s in Severity}
     v = report.verdict
