@@ -69,7 +69,7 @@ python -m solohive <путь к требованиям> <путь к отчёт�
 | `--input`, `-i` | Файл требований: **PDF**, DOCX, Markdown, TXT, HTML |
 | `--output`, `-o` | Файл отчёта: `.md` (по умолчанию), `.html` или `.json`. Без параметра: `reports/<имя>_report.md` |
 | `--model` | Другая модель, например `--model gemini-3.6-flash` |
-| `--provider` | `gemini` (по умолчанию), `openai`, `anthropic`, `ollama` |
+| `--provider` | `gemini` (по умолчанию), `openrouter`, `openai`, `anthropic`, `ollama` |
 | `--fast` | Быстрый режим: короткие рассуждения модели, крупные пакеты |
 | `--ask` | После проверки задать уточняющие вопросы в консоли и выпустить исправленную редакцию ТЗ |
 | `--answers FILE` | То же без диалога: ответы из файла (JSON `{"Q-01": "…"}` или строки `Q-01: ответ`) |
@@ -80,9 +80,23 @@ python -m solohive <путь к требованиям> <путь к отчёт�
 
 ## Модель
 
-По умолчанию используется **Google Gemini `gemini-3.8-flash`** через бесплатный ключ AI Studio. Если основная модель недоступна на вашем тарифе или исчерпала квоту, агент **сам переключается** на запасные (`gemini-3.6-flash` → `gemini-3.5-flash-lite` → `gemini-flash-latest`) и записывает фактически использованную модель в паспорт отчёта. Модели настраиваются в `.env` (`GEMINI_MODEL`, `GEMINI_FALLBACK_MODELS`).
+По умолчанию используется **Google Gemini `gemini-3.8-flash`** через бесплатный ключ AI Studio. Если основная модель перегружена, недоступна на вашем тарифе или исчерпала квоту, агент **сам переключается** на запасные (`gemini-3.6-flash` → `gemini-3.5-flash-lite`) и записывает фактически использованную модель в паспорт отчёта. Модели настраиваются в `.env` (`GEMINI_MODEL`, `GEMINI_FALLBACK_MODELS`).
 
-Поддерживаются и другие провайдеры: OpenAI и совместимые API (DeepSeek, OpenRouter, vLLM), Anthropic Claude, локальные модели через Ollama. Примеры есть в `.env.example`. Для них установите пакет: `pip install openai` или `pip install anthropic`.
+### Те же модели через OpenRouter
+
+Если бесплатных лимитов Gemini мало, а подключать оплату в AI Studio неудобно, ту же `gemini-3.8-flash` можно вызывать через [OpenRouter](https://openrouter.ai): один ключ, оплата картой от $5, цены моделей те же, что у Google. Полный прогон стоит порядка десятков центов.
+
+```bash
+# .env
+LLM_PROVIDER=openrouter
+OPENROUTER_API_KEY=ваш_ключ            # https://openrouter.ai/settings/keys
+# OPENROUTER_MODEL=google/gemini-3.8-flash            (по умолчанию)
+# OPENROUTER_FALLBACK_MODELS=google/gemini-3.6-flash  (по умолчанию)
+```
+
+Агент обрабатывает ответы OpenRouter так же, как ответы Gemini: при перегрузке (5xx) переключается на запасную модель, при 429 ждёт, а при **402** (закончились кредиты) сразу останавливается с понятным сообщением.
+
+Поддерживаются и другие провайдеры: OpenAI и совместимые API (DeepSeek, vLLM), Anthropic Claude (`pip install anthropic`), локальные модели через Ollama. Примеры есть в `.env.example`.
 
 > Пример `.env.example` организаторов указывает `gemini-1.5-flash`. Эта модель уже отключена в Gemini API, поэтому SoloHive использует актуальные модели.
 
@@ -178,7 +192,7 @@ flowchart LR
 
 ```bash
 pip install pytest
-python -m pytest -q                    # 38 тестов: загрузчики, правила, LLM-слой и устойчивость к сбоям, незнакомые ТЗ, сквозной прогон, HTML, уточнение
+python -m pytest -q                    # 44 теста: загрузчики, правила, LLM-слой и устойчивость к сбоям, незнакомые ТЗ, сквозной прогон, HTML, уточнение
 ```
 
 Тесты проверяют, в частности:
