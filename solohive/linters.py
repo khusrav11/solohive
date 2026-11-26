@@ -636,11 +636,33 @@ def acceptance_trace(doc: SourceDocument) -> list[Finding]:
 _SENT = re.compile(r"(?<=[.!?])\s+(?=[А-ЯЁA-Z])")
 
 
+def _id_paragraphs(doc: SourceDocument) -> list[tuple[Line, str]]:
+    """Пункты с ID вместе со строками-продолжениями (в PDF один пункт занимает несколько строк)."""
+    items: list[tuple[Line, str]] = []
+    lines = [ln for ln, _ in content_lines(doc)]
+    i = 0
+    while i < len(lines):
+        text = clean_md(lines[i].text)
+        if re.match(r"^[A-ZА-ЯЁ]{1,6}[-_.]?\d{1,3}(?:\.\d+)*\.?\s", text):
+            parts, j = [text], i + 1
+            while j < len(lines):
+                nxt = lines[j].text.strip()
+                if (not nxt or nxt.startswith(("#", "|", "*", "-")) or lines[j].no != lines[j - 1].no + 1
+                        or re.match(r"^[A-ZА-ЯЁ]{1,6}[-_.]?\d{1,3}(?:\.\d+)*\.?\s", clean_md(nxt))):
+                    break
+                parts.append(clean_md(nxt))
+                j += 1
+            items.append((lines[i], " ".join(parts)))
+            i = j
+        else:
+            i += 1
+    return items
+
+
 @rule("R-NON-ATOMIC")
 def non_atomic(doc: SourceDocument) -> list[Finding]:
     out = []
-    for line, _ in content_lines(doc):
-        text = clean_md(line.text)
+    for line, text in _id_paragraphs(doc):
         m = re.match(r"^([A-ZА-ЯЁ]{1,6}[-_.]?\d{1,3}(?:\.\d+)*)\.?\s+(.*)$", text)
         if not m:
             continue
@@ -711,3 +733,84 @@ def vague(doc: SourceDocument) -> list[Finding]:
                 evidence=[ev(doc, line.no)],
             ))
     return out
+
+
+# --- 6. Полнота API и приёмки --------------------------------------------------------------------------
+
+_READ_PROMISE = re.compile(r"\b(чита\w*|получа\w*\s+(настро|порог|данн|сумм)\w*|просматрива\w*|отобража\w*|"
+                           r"видн[ыо]\b|показыва\w*)", re.I)
+_URL = re.compile(r"(/[A-Za-z][\w/{}.-]*)")
+_READ_URL = re.compile(r"(get|read|list|fetch|show|view|info|status|settings?|limits?)(?![a-z])", re.I)
+_MUTATING_URL = re.compile(r"(save|update|create|delete|remove|set|add|edit|change|modify)", re.I)
+
+
+@rule("R-API-READ-GAP")
+def api_read_gap(doc: SourceDocument) -> list[Finding]:
+    """Текст обещает чтение данных (UI показывает, интеграция «читает»), а в API описано только изменение."""
+    lines = [ln for ln, _ in content_lines(doc, skip_code=False)]
+    url_lines = [ln for ln in lines if re.search(r"request url|url|curl|endpoint|\b(GET|POST|PUT|PATCH|DELETE)\s+/", ln.text, re.I)
+                 and _URL.search(ln.text)]
+    urls = {m.group(1) for ln in url_lines for m in _URL.finditer(ln.text) if len(m.group(1)) > 2}
+    if not urls:
+        return []
+    mutating = {u for u in urls if _MUTATING_URL.search(u)}
+    readable = urls - mutating          # любой другой метод может оказаться методом чтения — тогда не шумим
+    if readable or not mutating:
+        return []
+    api_parts = {top_part(ln) for ln in url_lines}
+    promise = [ln for ln in lines if top_part(ln) not in api_parts and _READ_PROMISE.search(ln.text)
+               and not _HEADING.match(ln.text)]
+    if not promise:
+        return []
+    evidence = [ev(doc, promise[0].no)] + ([ev(doc, promise[1].no)] if len(promise) > 1 else []) + [ev(doc, url_lines[0].no)]
+    return [Finding(
+        scope="set", criterion="set_complete", severity=Severity.MAJOR,
+        title="Документ обещает чтение данных, но в API описано только изменение",
+        explanation=f"В тексте сказано, что данные читаются или показываются пользователю, однако в спецификации API "
+                    f"есть только метод изменения ({', '.join(sorted(mutating))}). Неясно, откуда приложение возьмёт "
+                    f"текущие настройки и значения для экрана — эту часть нельзя реализовать по документу.",
+        recommendation="Добавить метод чтения (например, GET /…/settings) с описанием параметров, ответа и ошибок, "
+                       "либо явно сослаться на существующий метод.",
+        evidence=evidence[:3],
+    )]
+
+
+_NEGATIVE = re.compile(r"ошибк|отклон|неверн|некоррект|не\s+отправ|без\s+push|нет\s+push|не\s+меня|не\s+учит|"
+                       r"запрещ|недоступ|отказ|401|403|404|400|исключ", re.I)
+
+
+@rule("R-AC-COVERAGE")
+def acceptance_coverage(doc: SourceDocument) -> list[Finding]:
+    """Критериев приёмки меньше, чем функциональных требований, или нет ни одного негативного сценария."""
+    ac = [s for s in doc.sections if re.search(r"критери\w*\s+при[её]мк|acceptance", s.title, re.I)]
+    if not ac:
+        return []
+    sec = ac[0]
+    rows = [t for t in doc.tables if sec.line_start <= t.header_line <= sec.line_end]
+    n_cases = sum(len([r for r in t.rows if any(c.strip() for c in r)]) for t in rows)
+    if not n_cases:
+        return []
+    ids = sorted({re.match(r"^([A-ZА-ЯЁ]{1,6}[-_.]?\d{1,3})", text).group(1)
+                  for line, text in _id_paragraphs(doc)
+                  if re.match(r"^([A-ZА-ЯЁ]{1,6}[-_.]?\d{1,3})", text)
+                  and section_has(line, r"(?<!не)функциональн|functional")
+                  and not section_has(line, r"нефункциональн|non-?functional")})
+    body = " ".join(" ".join(r) for t in rows for r in t.rows)
+    has_negative = bool(_NEGATIVE.search(body))
+    problems = []
+    if ids and n_cases < len(ids):
+        problems.append(f"{n_cases} сценария(ев) на {len(ids)} функциональных требования(й) ({', '.join(ids)})")
+    if not has_negative:
+        problems.append("нет ни одного негативного сценария (ошибки ввода, отказ, граничные значения)")
+    if not problems:
+        return []
+    return [Finding(
+        scope="set", criterion="validatable", severity=Severity.MAJOR,
+        title="Критерии приёмки не покрывают требования: " + "; ".join(problems),
+        explanation="Без сценариев приёмки на каждое требование и на негативные случаи нельзя доказать, что "
+                    "реализация соответствует документу: часть правил (границы порога, смена порога, возвраты, "
+                    "ошибки API) останется без проверки.",
+        recommendation="Добавить минимум по одному позитивному и одному негативному сценарию на каждое требование "
+                       "с граничными значениями и связью с ID требования.",
+        evidence=[ev(doc, sec.line_start)] + [ev(doc, t.header_line) for t in rows[:1]],
+    )]
