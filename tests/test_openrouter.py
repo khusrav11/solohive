@@ -50,6 +50,7 @@ def test_settings_from_env(clean_env):
     assert s.provider == "openrouter" and s.api_key == "or-key"
     assert s.base_url == "https://openrouter.ai/api/v1"
     assert s.models_chain == ["google/gemini-3.8-flash", "google/gemini-3.6-flash"]
+    assert (s.concurrency, s.review_batch_size) == (6, 8)      # платный тариф: больше параллельности
 
 
 def test_autodetect_and_missing_key(clean_env):
@@ -101,3 +102,37 @@ def test_overloaded_model_routes_to_fallback():
     resp = asyncio.run(llm.generate("S", "U", stage="t"))
     assert resp.model == "google/gemini-3.6-flash"
     assert calls[0] == "google/gemini-3.8-flash"
+
+
+def test_stage_effort_is_passed_as_reasoning():
+    bodies = []
+
+    def handler(req):
+        bodies.append(json.loads(req.content))
+        return httpx.Response(200, json=completion('{"ok": true}'))
+
+    llm = make(handler)
+    asyncio.run(llm.generate("S", "U1", stage="segment", effort="low"))
+    asyncio.run(llm.generate("S", "U2", stage="review"))             # без подсказки — модель думает как обычно
+    asyncio.run(llm.generate("S", "U3", stage="critic", effort="medium"))
+    assert bodies[0]["reasoning"] == {"effort": "low"}
+    assert "reasoning" not in bodies[1]
+    assert bodies[2]["reasoning"] == {"effort": "medium"}
+
+
+def test_reasoning_dropped_if_provider_rejects_it():
+    bodies = []
+
+    def handler(req):
+        body = json.loads(req.content)
+        bodies.append(body)
+        if "reasoning" in body:
+            return httpx.Response(400, json={"error": {"code": 400, "message": "Unsupported parameter: reasoning"}})
+        return httpx.Response(200, json=completion('{"ok": true}'))
+
+    llm = make(handler)
+    resp = asyncio.run(llm.generate("S", "U", stage="segment", effort="low"))
+    assert resp.text == '{"ok": true}'
+    assert "reasoning" in bodies[0] and "reasoning" not in bodies[1]
+    asyncio.run(llm.generate("S", "U2", stage="interview", effort="low"))
+    assert "reasoning" not in bodies[2]                              # больше не отправляется
