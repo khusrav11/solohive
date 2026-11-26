@@ -10,7 +10,7 @@ def create_llm(settings: Settings) -> BaseLLM:
     if settings.provider == "gemini":
         from .gemini import GeminiLLM
         return GeminiLLM(settings)
-    if settings.provider in ("openai", "ollama"):
+    if settings.provider in ("openai", "openrouter", "ollama"):
         from .openai_compat import OpenAICompatLLM
         return OpenAICompatLLM(settings)
     if settings.provider == "anthropic":

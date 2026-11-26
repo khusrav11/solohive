@@ -31,7 +31,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("output_pos", nargs="?", metavar="OUTPUT", help="файл отчёта (.md, .html или .json)")
     p.add_argument("-i", "--input", help="путь к файлу требований")
     p.add_argument("-o", "--output", help="путь к файлу отчёта (по умолчанию reports/<имя>_report.md)")
-    p.add_argument("--provider", choices=["gemini", "openai", "anthropic", "ollama"], help="провайдер LLM (иначе из .env)")
+    p.add_argument("--provider", choices=["gemini", "openrouter", "openai", "anthropic", "ollama"], help="провайдер LLM (иначе из .env)")
     p.add_argument("--model", help="модель LLM (иначе из .env); отключает автозамену модели")
     p.add_argument("--batch-size", type=int, help="требований в одном запросе рецензента (по умолчанию 12)")
     p.add_argument("--fast", action="store_true",
