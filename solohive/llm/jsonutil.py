@@ -14,7 +14,8 @@ class JSONExtractError(ValueError):
 
 
 def extract_json(text: str):
-    """Достаёт JSON-объект из ответа: допускает ```json-ограду, текст вокруг, висячие запятые."""
+    """Достаёт JSON-объект из ответа: допускает ```json-ограду, текст вокруг, висячие запятые
+    и «сырые» переносы строк внутри строк (модель цитирует многострочный фрагмент документа)."""
     if text is None:
         raise JSONExtractError("пустой ответ модели")
     candidates: list[str] = []
@@ -29,7 +30,8 @@ def extract_json(text: str):
     for cand in candidates:
         for variant in (cand, _TRAILING_COMMA.sub(r"\1", cand)):
             try:
-                return json.loads(variant)
+                # strict=False: управляющие символы (перевод строки, табуляция) внутри строк допустимы
+                return json.loads(variant, strict=False)
             except json.JSONDecodeError as exc:
                 last_err = exc
     raise JSONExtractError(f"ответ не является корректным JSON: {last_err}")
