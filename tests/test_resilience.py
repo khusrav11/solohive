@@ -67,3 +67,30 @@ def test_pipeline_degrades_quickly_when_llm_unavailable():
     assert report.active_findings                           # правила всё равно дали отчёт
     assert any("без LLM" in w for w in report.warnings) or any("недоступны" in w for w in report.warnings)
     assert len(report.warnings) <= 10                       # без простыни из одинаковых ошибок
+
+
+def test_rerun_fills_only_missing_parts_from_cache(tmp_path):
+    """Первый прогон: часть запросов падает на перегрузке. Повторный: готовое — из кэша, дозапрос — только упавшее."""
+    state = {"flaky": True, "calls": 0}
+
+    def handler(req: httpx.Request):
+        body = json.loads(req.content)
+        user = body["contents"][0]["parts"][0]["text"]
+        stage = stage_of(user)
+        state["calls"] += 1
+        if state["flaky"] and stage in ("review", "critic", "interview"):
+            return httpx.Response(503, json={"error": {"code": 503, "status": "UNAVAILABLE", "message": "high demand"}})
+        key = next(k for k in RESPONDERS if stage.startswith(k))
+        out = RESPONDERS[key](stage, body["systemInstruction"]["parts"][0]["text"], user)
+        return gemini_reply(out if isinstance(out, str) else json.dumps(out, ensure_ascii=False))
+
+    s = Settings(provider="gemini", model="m1", api_key="K", cache_dir=tmp_path, cooldown_base=0.05, max_wait=0.4,
+                 review_batch_size=12)
+    first = asyncio.run(run_pipeline(SAMPLE, s, llm=GeminiLLM(s, transport=httpx.MockTransport(handler))))
+    assert not first.reviews
+    state.update(flaky=False, calls=0)
+    second = asyncio.run(run_pipeline(SAMPLE, s, llm=GeminiLLM(s, transport=httpx.MockTransport(handler))))
+    assert second.reviews and second.questions
+    cached = [c for c in second.calls if c.cached]
+    assert {c.stage for c in cached} >= {"segment", "set:consistency", "set:completeness", "scenarios"}
+    assert state["calls"] == len([c for c in second.calls if c.ok and not c.cached])   # дозапрошено только недостающее

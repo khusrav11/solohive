@@ -53,7 +53,16 @@ async def review_all(doc: SourceDocument, reqs: list[Requirement], llm: BaseLLM,
         return await llm.generate_json(system_prompt(), user, ReviewResponse, stage=f"review#{idx + 1}")
 
     batches = _batches(reqs, batch_size)
-    results = await asyncio.gather(*(run_batch(i, b) for i, b in enumerate(batches)), return_exceptions=True)
+    results = list(await asyncio.gather(*(run_batch(i, b) for i, b in enumerate(batches)), return_exceptions=True))
+    # второй заход для пакетов, упавших из-за перегрузки: по одному, пока остальные этапы не ждут
+    for i, res in enumerate(results):
+        if isinstance(res, Exception) and not isinstance(res, FatalLLMError) and not llm.exhausted:
+            try:
+                results[i] = await run_batch(i, batches[i])
+            except FatalLLMError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                results[i] = exc
 
     reviews: dict[str, RequirementReview] = {}
     findings: list[Finding] = []

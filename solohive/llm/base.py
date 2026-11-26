@@ -98,7 +98,9 @@ class BaseLLM:
         self._loop = None
         self._last_start = 0.0
         self._failed_in_row = 0                    # подряд проваленные запросы (после всех повторов)
-        self._tripped = False                      # «предохранитель»: LLM недоступна, не ждём дальше
+        self._tripped = False                      # «предохранитель»: дальше короткое ожидание, без долгих пауз
+        self.on_wait = None                        # колбэк для вывода «жду N с…» в консоль
+        self._last_notice = 0.0
 
     # --- реализуется провайдером -------------------------------------------------
     async def _generate(self, model: str, system: str, user: str, json_schema: dict | None,
@@ -128,7 +130,7 @@ class BaseLLM:
         """Выбирает модель для запроса: первая живая и не «остывающая»; иначе — сколько ждать."""
         now = time.monotonic()
         alive = [m for m in self._chain if m not in self._dead]
-        if not alive or self._tripped:
+        if not alive:
             return None, 0.0
         for m in alive:
             if self._cool.get(m, 0.0) <= now:
@@ -173,14 +175,31 @@ class BaseLLM:
             self.warnings.append(f"Модель {model} исключена: {self._dead[model]}{tail}.")
 
     # --- основной вызов ----------------------------------------------------------
+    def _notify(self, text: str) -> None:
+        if self.on_wait and time.monotonic() - self._last_notice > 12:
+            self._last_notice = time.monotonic()
+            try:
+                self.on_wait(text)
+            except Exception:  # noqa: BLE001
+                pass
+
+    def _store(self, model: str, system: str, user: str, effort: str | None, resp: LLMResponse) -> None:
+        path = self._cache_path(model, system, user, effort)
+        if path and not resp.cached:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps({"text": resp.text, "model": resp.model, "in": resp.input_tokens,
+                                        "out": resp.output_tokens}, ensure_ascii=False), encoding="utf-8")
+
     async def generate(self, system: str, user: str, *, stage: str, json_schema: dict | None = None,
-                       effort: str | None = None) -> LLMResponse:
+                       effort: str | None = None, cache: bool = True) -> LLMResponse:
         cached = self._cached(system, user, effort)
         if cached:
             self._record(stage, cached, 1)
             return cached
         attempts = 0
         started = time.monotonic()
+        # после срабатывания предохранителя — только короткое ожидание: поздние этапы получают шанс, но без долгих пауз
+        budget = min(self.settings.max_wait, 25.0) if self._tripped else self.settings.max_wait
         last: BaseException | None = None
         while True:
             model, wait = self._pick()
@@ -190,17 +209,19 @@ class BaseLLM:
                 err = LLMError(f"[{stage}] все модели недоступны ({why})")
                 self._record_error(stage, self._chain[-1], attempts, str(err))
                 raise err
-            if attempts >= self.settings.max_retries + 3 or time.monotonic() - started + wait > self.settings.max_wait:
+            if attempts >= self.settings.max_retries + 3 or time.monotonic() - started + wait > budget:
                 reason = short_reason(last) if last else "превышено время ожидания"
                 err = LLMError(f"[{stage}] не удалось получить ответ: {reason}")
                 self._record_error(stage, model, attempts, str(err))
                 self._failed_in_row += 1
                 if self._failed_in_row >= 3 and not self._tripped:
                     self._tripped = True
-                    self.warnings.append("Три запроса подряд не выполнены ни на одной модели — оставшиеся этапы "
-                                         "завершены без LLM, чтобы не ждать (повторите прогон позже).")
+                    self.warnings.append("Gemini долго перегружен: оставшиеся этапы получили короткое ожидание, "
+                                         "чтобы не затягивать прогон. Повторите команду — готовые части возьмутся "
+                                         "из кэша, дозапросится только недостающее.")
                 raise err
             if wait > 0:
+                self._notify(f"Gemini перегружен, жду {wait:.0f} с и повторяю ({stage})…")
                 await asyncio.sleep(wait + random.uniform(0, 1.0))
                 continue
             attempts += 1
@@ -230,27 +251,29 @@ class BaseLLM:
                 self._fails[model] += 1
                 # перегрузка: модель «остывает» 20 → 40 → 90 с; запрос сразу пробует следующую модель
                 base = self.settings.cooldown_base
-                self._cool[model] = time.monotonic() + min(90.0, base * 2 ** (self._fails[model] - 1))
+                self._cool[model] = time.monotonic() + min(45.0, base * 2 ** (self._fails[model] - 1))
                 continue
 
             self._fails[model] = 0
             self._failed_in_row = 0
             if model not in self.used_models:
                 self.used_models.append(model)
-            path = self._cache_path(model, system, user, effort)
-            if path:
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text(json.dumps({"text": resp.text, "model": resp.model, "in": resp.input_tokens,
-                                            "out": resp.output_tokens}, ensure_ascii=False), encoding="utf-8")
+            if cache:
+                self._store(model, system, user, effort, resp)
             self._record(stage, resp, attempts)
             return resp
 
     async def generate_json(self, system: str, user: str, schema: type[T], *, stage: str,
                             effort: str | None = None) -> T:
-        """Вызов с валидацией ответа по pydantic-схеме; при ошибке — одна попытка ремонта."""
-        resp = await self.generate(system, user, stage=stage, effort=effort)
+        """Вызов с валидацией ответа по pydantic-схеме; при ошибке — одна попытка ремонта.
+
+        В кэш попадает только ответ, прошедший валидацию: «сломанный» ответ не будет переиспользован.
+        """
+        resp = await self.generate(system, user, stage=stage, effort=effort, cache=False)
         try:
-            return schema.model_validate(extract_json(resp.text))
+            result = schema.model_validate(extract_json(resp.text))
+            self._store(resp.model, system, user, effort, resp)
+            return result
         except (JSONExtractError, ValidationError) as exc:
             if resp.cached and self.settings.cache_dir:
                 for m in self._chain:
@@ -264,8 +287,10 @@ class BaseLLM:
                 + "\nВерни ТОЛЬКО корректный JSON по указанной схеме, без пояснений и без ```."
                 + " Если ответ получался слишком длинным — сократи тексты комментариев, но сохрани все находки."
             )
-            resp2 = await self.generate(system, repair_user, stage=f"{stage}:repair", effort=effort)
-            return schema.model_validate(extract_json(resp2.text))
+            resp2 = await self.generate(system, repair_user, stage=f"{stage}:repair", effort=effort, cache=False)
+            result = schema.model_validate(extract_json(resp2.text))
+            self._store(resp2.model, system, user, effort, resp2)   # исправленный ответ — под исходным запросом
+            return result
 
     # --- учёт вызовов -----------------------------------------------------------
     def _record(self, stage: str, resp: LLMResponse, attempts: int) -> None:

@@ -73,8 +73,12 @@ class GeminiLLM(BaseLLM):
             raise TransientLLMError(f"пустой ответ модели (promptFeedback={feedback})")
         parts = (cands[0].get("content") or {}).get("parts") or []
         text = "".join(p.get("text", "") for p in parts if not p.get("thought"))
-        if not text.strip():
-            raise TransientLLMError(f"пустой ответ модели (finishReason={cands[0].get('finishReason')})")
+        reason = str(cands[0].get("finishReason") or "STOP")
+        if reason not in ("STOP", "MAX_TOKENS", "FINISH_REASON_UNSPECIFIED"):
+            raise TransientLLMError(f"ответ модели прерван (finishReason={reason})")
+        if len(text.strip()) < 3:
+            # модель «сорвалась» и вернула 1–2 символа — повторяем, а не тратим запрос на ремонт JSON
+            raise TransientLLMError(f"пустой ответ модели (finishReason={reason})")
         usage = data.get("usageMetadata") or {}
         return LLMResponse(
             text=text,

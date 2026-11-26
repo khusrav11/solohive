@@ -157,3 +157,42 @@ def test_no_quota_anywhere_fails_fast():
     assert time.monotonic() - t0 < 2.0          # «предохранитель»: без долгих ожиданий
     assert n["calls"] == 2                      # каждая модель опрошена один раз
     assert llm.exhausted
+
+
+def test_one_token_reply_is_retried_not_returned():
+    replies = iter([
+        {"candidates": [{"content": {"parts": [{"text": "{"}]}, "finishReason": "STOP"}],
+         "usageMetadata": {"promptTokenCount": 9000, "candidatesTokenCount": 1}},
+        OK_BODY,
+    ])
+
+    def handler(req):
+        return httpx.Response(200, json=next(replies))
+
+    llm = make(handler, model="m", fallback_models=["m2"], cooldown_base=0.05)
+    r = asyncio.run(llm.generate("S", "U", stage="review#1"))
+    assert r.text == '{"ok": true}'
+
+
+def test_only_valid_json_is_cached(tmp_path):
+    from pydantic import BaseModel
+
+    class M(BaseModel):
+        ok: bool
+
+    texts = iter(["это не json", '{"ok": true}'])
+    n = {"calls": 0}
+
+    def handler(req):
+        n["calls"] += 1
+        return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": next(texts)}]},
+                                                         "finishReason": "STOP"}]})
+
+    s = Settings(provider="gemini", model="m", api_key="K", cache_dir=tmp_path)
+    llm = GeminiLLM(s, transport=httpx.MockTransport(handler))
+    assert asyncio.run(llm.generate_json("S", "U", M, stage="t")).ok
+    assert n["calls"] == 2                                     # ответ + ремонт
+    llm2 = GeminiLLM(s, transport=httpx.MockTransport(handler))
+    assert asyncio.run(llm2.generate_json("S", "U", M, stage="t")).ok
+    assert n["calls"] == 2                                     # второй прогон: валидный ответ из кэша
+    assert llm2.calls[-1].cached
