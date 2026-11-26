@@ -7,7 +7,7 @@ import re
 from pydantic import Field
 
 from ..document import SourceDocument, clean_md
-from ..llm.base import BaseLLM, FatalLLMError
+from ..llm.base import BaseLLM, FatalLLMError, short_reason
 from ..models import Requirement
 from .common import Loose, fill, load_prompt, system_prompt
 
@@ -42,7 +42,7 @@ async def segment(doc: SourceDocument, llm: BaseLLM) -> tuple[list[Requirement],
     except FatalLLMError:
         raise
     except Exception as exc:  # noqa: BLE001
-        warnings.append(f"Нарезка LLM не удалась ({exc}); использована детерминированная нарезка.")
+        warnings.append(f"Нарезка LLM не удалась ({short_reason(exc)}); использована нарезка по структуре документа.")
         reqs = []
     if len(reqs) < 3:
         if reqs:
@@ -87,7 +87,11 @@ def _ground(doc: SourceDocument, raws: list[RawReq]) -> list[Requirement]:
     return out
 
 
-_SKIP_SECTIONS = re.compile(r"общие сведения|ревью|согласу|оглавлени|содержани", re.I)
+_SKIP_SECTIONS = re.compile(r"общие сведения|ревью|согласу|оглавлени|содержани|история изменений", re.I)
+# Служебные поля паспорта, которые не являются требованиями
+_META_KEYS = re.compile(r"^(author|автор|developer|разработчик|gitlab|github|repository|репозиторий|framework|фреймворк|"
+                        r"controller|контроллер|url type|swagger|jira|задача в jira|owner|владелец|версия|version|дата|date)\b",
+                        re.I)
 _DOC_ID = re.compile(r"^([A-ZА-ЯЁ]{1,6}[-_.]?\d{1,3}(?:\.\d+)*)\.?\s+")
 
 
@@ -129,6 +133,10 @@ def fallback_segment(doc: SourceDocument) -> list[Requirement]:
     for ls, le, text in blocks:
         line = doc.line(ls)
         if any(_SKIP_SECTIONS.search(s) for s in line.section) or len(text) < 15:
+            continue
+        if len(line.section) <= 1:          # вступление до первого раздела — не требование
+            continue
+        if _META_KEYS.match(text):           # «Author | …», «Gitlab project | …» и т. п.
             continue
         m = _DOC_ID.match(text)
         sec = doc.display_section(line.section)

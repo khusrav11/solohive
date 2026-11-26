@@ -17,9 +17,9 @@ DEFAULT_MODELS = {
     "offline": "без LLM (только правила)",
 }
 
-# Запасные модели Gemini: если основная недоступна на бесплатном тарифе
-# или исчерпала дневную квоту, агент сам переключится на следующую.
-DEFAULT_GEMINI_FALLBACKS = "gemini-3.6-flash,gemini-3.5-flash-lite,gemini-flash-latest"
+# Запасные модели Gemini: при перегрузке основной (503) запрос временно уходит на запасную,
+# при отсутствии квоты модель исключается до конца прогона.
+DEFAULT_GEMINI_FALLBACKS = "gemini-3.6-flash,gemini-3.5-flash-lite"
 
 
 class ConfigError(RuntimeError):
@@ -57,12 +57,14 @@ class Settings:
     base_url: str | None = None
     temperature: float = 0.2
     max_output_tokens: int = 32768
-    concurrency: int = 5
+    concurrency: int = 3
     rpm: int = 0                    # 0 = без ограничения частоты (429 всё равно обрабатывается)
     timeout: float = 240.0
     max_retries: int = 5
+    max_wait: float = 150.0          # сколько максимум ждать ответа на один запрос с учётом повторов, с
+    cooldown_base: float = 20.0      # «остывание» модели после перегрузки (503): 20 → 40 → 90 с
     thinking_level: str | None = None
-    review_batch_size: int = 6
+    review_batch_size: int = 12
     cache_dir: Path | None = Path(".solohive_cache")
 
     @property
@@ -124,12 +126,13 @@ class Settings:
             base_url=base_url,
             temperature=float(_env("LLM_TEMPERATURE", "0.2")),
             max_output_tokens=int(_env("LLM_MAX_OUTPUT_TOKENS", "32768")),
-            concurrency=max(1, int(_env("LLM_CONCURRENCY", "5"))),
+            concurrency=max(1, int(_env("LLM_CONCURRENCY", "3"))),
             rpm=max(0, int(_env("LLM_RPM", "0"))),
             timeout=float(_env("LLM_TIMEOUT", "240")),
             max_retries=max(0, int(_env("LLM_MAX_RETRIES", "5"))),
+            max_wait=float(_env("LLM_MAX_WAIT", "150")),
             thinking_level=_env("GEMINI_THINKING_LEVEL"),
-            review_batch_size=max(1, int(_env("REVIEW_BATCH_SIZE", "6"))),
+            review_batch_size=max(1, int(_env("REVIEW_BATCH_SIZE", "12"))),
             cache_dir=Path(_env("SOLOHIVE_CACHE_DIR", ".solohive_cache")) if use_cache else None,
         )
 

@@ -114,3 +114,46 @@ def test_json_extraction_and_repair():
     llm = MockLLM(s, {"t": lambda *a: next(answers)})
     assert asyncio.run(llm.generate_json("S", "U", M, stage="t")).x == 5
     assert [c.stage for c in llm.calls] == ["t", "t:repair"]
+
+
+def test_overload_routes_call_to_fallback_and_returns_to_primary():
+    import time
+    calls = []
+    state = {"primary_down": True}
+
+    def handler(req):
+        model = str(req.url).split("/models/")[1].split(":")[0]
+        calls.append(model)
+        if model == "main-model" and state["primary_down"]:
+            return httpx.Response(503, json={"error": {"code": 503, "status": "UNAVAILABLE",
+                                                       "message": "This model is currently experiencing high demand."}})
+        return httpx.Response(200, json=OK_BODY)
+
+    llm = make(handler, model="main-model", fallback_models=["lite-model"], cooldown_base=0.2)
+    r1 = asyncio.run(llm.generate("S", "U1", stage="a"))
+    assert r1.model == "lite-model" and calls == ["main-model", "lite-model"]     # тот же запрос — на запасную
+    assert "main-model" not in llm._dead                                         # основную не исключили
+    state["primary_down"] = False
+    time.sleep(0.25)                                                             # основная «остыла»
+    r2 = asyncio.run(llm.generate("S", "U2", stage="b"))
+    assert r2.model == "main-model"                                              # вернулись на основную
+    assert any("перегружен" in w for w in llm.summary_warnings())
+
+
+def test_no_quota_anywhere_fails_fast():
+    import time
+    n = {"calls": 0}
+
+    def handler(req):
+        n["calls"] += 1
+        return httpx.Response(429, json={"error": {"code": 429, "status": "RESOURCE_EXHAUSTED",
+                                                   "message": "Quota exceeded ... limit: 0, model: x"}})
+
+    llm = make(handler, model="m1", fallback_models=["m2"])
+    t0 = time.monotonic()
+    for i in range(5):
+        with pytest.raises(Exception):
+            asyncio.run(llm.generate("S", f"U{i}", stage="s"))
+    assert time.monotonic() - t0 < 2.0          # «предохранитель»: без долгих ожиданий
+    assert n["calls"] == 2                      # каждая модель опрошена один раз
+    assert llm.exhausted

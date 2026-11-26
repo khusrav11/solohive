@@ -5,7 +5,7 @@ from __future__ import annotations
 from pydantic import Field
 
 from ..document import SourceDocument
-from ..llm.base import BaseLLM, FatalLLMError
+from ..llm.base import BaseLLM, FatalLLMError, short_reason
 from ..models import Finding, Priority, Question, Requirement, Verdict
 from .common import Loose, fill, load_prompt, requirements_brief, system_prompt
 from .critic import findings_block
@@ -52,7 +52,7 @@ async def interview(doc: SourceDocument, reqs: list[Requirement], findings: list
     except FatalLLMError:
         raise
     except Exception as exc:  # noqa: BLE001
-        return [], verdict, [f"Интервьюер не выполнен ({exc}); вопросы взяты у рецензентов."]
+        return [], verdict, [f"Интервьюер не выполнен ({short_reason(exc)}); вопросы взяты у рецензентов и аналитиков."]
     questions = []
     for i, q in enumerate([q for q in resp.questions if q.question.strip()], start=1):
         questions.append(Question(qid=f"Q-{i:02d}", addressee=q.addressee.strip() or "Системный аналитик",

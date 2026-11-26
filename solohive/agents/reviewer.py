@@ -8,7 +8,7 @@ from pydantic import Field
 
 from .. import criteria as C
 from ..document import SourceDocument
-from ..llm.base import BaseLLM, FatalLLMError
+from ..llm.base import BaseLLM, FatalLLMError, short_reason
 from ..models import CriterionEval, Finding, Requirement, RequirementReview
 from .common import (Loose, RawDefect, coerce_criteria, defect_to_finding, fill, load_prompt, norm_rid, norm_status,
                      requirements_brief, system_prompt)
@@ -59,11 +59,12 @@ async def review_all(doc: SourceDocument, reqs: list[Requirement], llm: BaseLLM,
     findings: list[Finding] = []
     questions: list[str] = []
     warnings: list[str] = []
+    failed: list[tuple[list[Requirement], Exception]] = []
     for batch, res in zip(batches, results):
         if isinstance(res, FatalLLMError):
             raise res
         if isinstance(res, Exception):
-            warnings.append(f"Рецензент не обработал {batch[0].rid}–{batch[-1].rid}: {res}")
+            failed.append((batch, res))
             continue
         for raw in res.reviews:
             req = by_id.get(norm_rid(raw.rid, set(by_id)) or "")
@@ -80,7 +81,12 @@ async def review_all(doc: SourceDocument, reqs: list[Requirement], llm: BaseLLM,
             for d in raw.defects:
                 findings.append(defect_to_finding(doc, d, scope="requirement", source="llm:reviewer", req=req))
             questions += [f"[{req.rid}/{req.doc_id or '—'}] {q.strip()}" for q in raw.questions if q.strip()]
-    missing = [r.rid for r in reqs if r.rid not in reviews]
+    if failed:
+        ranges = ", ".join(f"{b[0].rid}–{b[-1].rid}" for b, _ in failed)
+        warnings.append(f"Рецензенты не обработали {len(failed)} из {len(batches)} пакетов ({ranges}): "
+                        f"{short_reason(failed[0][1])}. Для этих требований в отчёте только находки правил.")
+    missing = [r.rid for r in reqs if r.rid not in reviews and not any(r in b for b, _ in failed)]
     if missing:
-        warnings.append(f"Нет оценки рецензента для: {', '.join(missing)}")
+        warnings.append(f"Модель не вернула оценку для {len(missing)} требований: {', '.join(missing[:10])}"
+                        + ("…" if len(missing) > 10 else ""))
     return reviews, findings, questions, warnings

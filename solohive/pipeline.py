@@ -121,7 +121,7 @@ async def run_pipeline(input_path: str | Path, settings: Settings, llm: BaseLLM 
         _renumber(findings, questions, verdict)
         _link_scenarios(scenarios, findings)
 
-        warnings += llm.warnings
+        warnings += llm.summary_warnings()
         if settings.provider == "offline":
             warnings = ["Офлайн-режим: LLM не использовалась. Отчёт построен на детерминированных правилах и "
                         "нарезке по структуре документа; смысловые проверки, вопросы и обоснование вердикта недоступны."]

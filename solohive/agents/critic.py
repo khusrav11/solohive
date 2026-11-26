@@ -6,7 +6,7 @@ from pydantic import Field
 from rapidfuzz import fuzz
 
 from ..document import SourceDocument
-from ..llm.base import BaseLLM, FatalLLMError
+from ..llm.base import BaseLLM, FatalLLMError, short_reason
 from ..models import Finding
 from .common import Loose, fill, load_prompt, norm_severity, system_prompt
 
@@ -87,7 +87,7 @@ async def verify(doc: SourceDocument, findings: list[Finding], llm: BaseLLM) -> 
     except FatalLLMError:
         raise
     except Exception as exc:  # noqa: BLE001
-        return 0, 0, [f"Критик не выполнен ({exc}); находки оставлены без LLM-верификации."]
+        return 0, 0, [f"Критик не выполнен ({short_reason(exc)}); находки оставлены без LLM-верификации."]
     dropped = merged = 0
     for d in resp.decisions:
         f = by_id.get(d.fid.strip())
