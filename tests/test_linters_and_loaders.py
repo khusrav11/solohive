@@ -31,7 +31,7 @@ def test_all_formats_produce_same_structure(name):
 def test_key_rules_fire_on_sample_in_every_format(name):
     fired = rules_fired(load_document(EXAMPLES / name))
     for rule in ["R-HTTP-SAFE-METHOD", "R-HTTP-SUCCESS-ERROR", "R-MONEY-UNITS", "R-TYPE-MISMATCH",
-                 "R-TIMEZONE", "R-PLACEHOLDER", "R-NFR-METRIC", "R-VERSION"]:
+                 "R-TIMEZONE", "R-PLACEHOLDER", "R-NFR-METRIC", "R-NFR-ENDPOINT", "R-VERSION"]:
         assert rule in fired, f"{rule} не сработало на {name}"
 
 
@@ -74,6 +74,17 @@ def test_no_false_positives_on_clean_spec(tmp_path: Path):
     p.write_text(CLEAN_SPEC, encoding="utf-8")
     fired = rules_fired(load_document(p))
     assert fired == set(), fired
+
+
+def test_nfr_endpoint_only_for_internal_handoff(tmp_path: Path):
+    p = tmp_path / "nfr.md"
+    p.write_text("# Т\n\n## Нефункциональные требования\n"
+                 "* НФТ-1. Сервис передаёт отчёт в очередь не позднее 5 секунд после запроса.\n", encoding="utf-8")
+    assert "R-NFR-ENDPOINT" in rules_fired(load_document(p))
+    p.write_text("# Т\n\n## Нефункциональные требования\n"
+                 "* НФТ-1. Клиент получает уведомление не позднее 60 секунд после покупки для 95% событий.\n",
+                 encoding="utf-8")
+    assert "R-NFR-ENDPOINT" not in rules_fired(load_document(p))
 
 
 def test_vague_words_detected(tmp_path: Path):
