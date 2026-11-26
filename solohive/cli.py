@@ -111,6 +111,12 @@ def main(argv: list[str] | None = None) -> int:
                    f"Вопросов: {len(report.questions)}")
     progress.print(f"     Разработка: [bold]{STATUS_RU[v.dev_status]}[/bold] · Тестирование: "
                    f"[bold]{STATUS_RU[v.test_status]}[/bold]")
+    cl = report.clarification
+    if cl is not None and cl.verdict_after is not None:
+        va = cl.verdict_after
+        fixed = sum(1 for r in cl.resolutions if r.status == "resolved")
+        progress.print(f"     После уточнения (устранено дефектов: {fixed}): разработка — "
+                       f"[bold]{STATUS_RU[va.dev_status]}[/bold] · тестирование — [bold]{STATUS_RU[va.test_status]}[/bold]")
     for w in report.warnings[:6]:
         progress.warn(w)
     if len(report.warnings) > 6:

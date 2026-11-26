@@ -109,6 +109,15 @@ def render(report: Report) -> str:
         f"> **Требований:** {len(report.requirements)} · **Нарушений:** {len(act)} "
         f"(🔴 {by_sev[Severity.CRITICAL]} критичных · 🟡 {by_sev[Severity.MAJOR]} существенных · "
         f"🟢 {by_sev[Severity.MINOR]} замечаний) · **Уточняющих вопросов:** {len(report.questions)}  ",
+    ]
+    cl0 = report.clarification
+    if cl0 is not None and cl0.verdict_after is not None:
+        va0 = cl0.verdict_after
+        fixed0 = sum(1 for r in cl0.resolutions if r.status == "resolved")
+        L += [f"> **После уточнения** ({len(cl0.answers)} ответов, устранено дефектов: {fixed0}): "
+              f"разработка — {VERDICT_ICON[va0.dev_status]} {STATUS_RU[va0.dev_status]} · тестирование — "
+              f"{VERDICT_ICON[va0.test_status]} {STATUS_RU[va0.test_status]}  "]
+    L += [
         f"> Сформировано агентом **{P.agent_name} v{P.agent_version}** (коммит `{P.agent_commit}`), "
         f"модель `{', '.join(P.models)}`. Проверка по ISO/IEC/IEEE 29148:2018 (п. 5.2.5, 5.2.6) и IEEE Std 830-1998 (п. 4.3).",
         "",
