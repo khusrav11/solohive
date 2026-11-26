@@ -142,13 +142,14 @@ class Settings:
             base_url=base_url,
             temperature=float(_env("LLM_TEMPERATURE", "0.2")),
             max_output_tokens=int(_env("LLM_MAX_OUTPUT_TOKENS", "32768")),
-            concurrency=max(1, int(_env("LLM_CONCURRENCY", "3"))),
+            # платный OpenRouter не ограничивает частоту: больше параллельных запросов и пакеты поменьше
+            concurrency=max(1, int(_env("LLM_CONCURRENCY", "6" if provider == "openrouter" else "3"))),
             rpm=max(0, int(_env("LLM_RPM", "0"))),
             timeout=float(_env("LLM_TIMEOUT", "240")),
             max_retries=max(0, int(_env("LLM_MAX_RETRIES", "5"))),
             max_wait=float(_env("LLM_MAX_WAIT", "150")),
             thinking_level=_env("GEMINI_THINKING_LEVEL"),
-            review_batch_size=max(1, int(_env("REVIEW_BATCH_SIZE", "12"))),
+            review_batch_size=max(1, int(_env("REVIEW_BATCH_SIZE", "8" if provider == "openrouter" else "12"))),
             cache_dir=Path(_env("SOLOHIVE_CACHE_DIR", ".solohive_cache")) if use_cache else None,
         )
 

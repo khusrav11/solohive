@@ -83,7 +83,7 @@ async def verify(doc: SourceDocument, findings: list[Finding], llm: BaseLLM) -> 
     by_id = {f.fid: f for f in findings}
     user = fill(load_prompt("critic"), TITLE=doc.title, DOC=doc.numbered(), FINDINGS=findings_block(findings))
     try:
-        resp = await llm.generate_json(system_prompt(), user, CriticResponse, stage="critic", effort="low")
+        resp = await llm.generate_json(system_prompt(), user, CriticResponse, stage="critic", effort="medium")
     except FatalLLMError:
         raise
     except Exception as exc:  # noqa: BLE001

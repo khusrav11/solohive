@@ -34,7 +34,7 @@ def build_parser() -> argparse.ArgumentParser:
                    "(по умолчанию reports/<имя>_report в формате входного файла)")
     p.add_argument("--provider", choices=["gemini", "openrouter", "openai", "anthropic", "ollama"], help="провайдер LLM (иначе из .env)")
     p.add_argument("--model", help="модель LLM (иначе из .env); отключает автозамену модели")
-    p.add_argument("--batch-size", type=int, help="требований в одном запросе рецензента (по умолчанию 12)")
+    p.add_argument("--batch-size", type=int, help="требований в одном запросе рецензента (по умолчанию 12, для OpenRouter 8)")
     p.add_argument("--fast", action="store_true",
                    help="быстрый режим: короткие рассуждения модели и крупные пакеты (быстрее, чуть менее глубоко)")
     p.add_argument("--ask", action="store_true",
