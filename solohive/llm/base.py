@@ -16,6 +16,7 @@ import asyncio
 import hashlib
 import json
 import random
+import re
 import time
 from collections import Counter
 from dataclasses import dataclass
@@ -284,6 +285,7 @@ class BaseLLM:
             self._store(resp.model, system, user, effort, resp)
             return result
         except (JSONExtractError, ValidationError) as exc:
+            self._save_failure(stage, exc, resp.text)
             if resp.cached and self.settings.cache_dir:
                 for m in self._chain:
                     p = self._cache_path(m, system, user, effort)
@@ -300,6 +302,18 @@ class BaseLLM:
             result = schema.model_validate(extract_json(resp2.text))
             self._store(resp2.model, system, user, effort, resp2)   # исправленный ответ — под исходным запросом
             return result
+
+    def _save_failure(self, stage: str, exc: BaseException, text: str) -> None:
+        """Сохраняет ответ, не прошедший проверку формата, для разбора: <кэш>/failures/<этап>-<время>.txt."""
+        if not self.settings.cache_dir:
+            return
+        try:
+            folder = Path(self.settings.cache_dir) / "failures"
+            folder.mkdir(parents=True, exist_ok=True)
+            name = re.sub(r"[^\w.-]+", "_", stage) + time.strftime("-%Y%m%d-%H%M%S") + ".txt"
+            (folder / name).write_text(f"{exc}\n\n{text or ''}", encoding="utf-8")
+        except OSError:
+            pass
 
     # --- учёт вызовов -----------------------------------------------------------
     def _record(self, stage: str, resp: LLMResponse, attempts: int) -> None:
