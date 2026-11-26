@@ -90,11 +90,24 @@ def render_html(report: Report) -> str:
     # --- шапка ---------------------------------------------------------------------------------------
     head_line = (f"Документ {VERDICT_TEXT[V.dev_status]} к разработке"
                  + (f": {sev['CRITICAL']} {_pl(sev['CRITICAL'], 'блокер', 'блокера', 'блокеров')}" if sev["CRITICAL"] else ""))
+    after_line = ""
+    cl0 = report.clarification
+    if cl0 is not None and cl0.verdict_after is not None:
+        fixed = {r.fid for r in cl0.resolutions if r.status == "resolved"}
+        n_crit = sev["CRITICAL"]
+        crit_fixed = sum(1 for f in act if f.severity == Severity.CRITICAL and f.fid in fixed)
+        ready = {"no": "не готов к разработке", "conditional": "готов к разработке с условиями",
+                 "yes": "готов к разработке"}[cl0.verdict_after.dev_status]
+        after_line = (f"После уточнения ({len(cl0.answers)} {_pl(len(cl0.answers), 'ответ', 'ответа', 'ответов')}) "
+                      f"документ {ready}: устранено {len(fixed)} из {len(act)} "
+                      f"{_pl(len(act), 'дефекта', 'дефектов', 'дефектов')}"
+                      + (f", включая все {n_crit} {_pl(n_crit, 'блокер', 'блокера', 'блокеров')}"
+                         if n_crit and crit_fixed == n_crit else "") + ".")
     header = f"""
 <header class="top">
   <div class="brand">SoloHive <span>отчёт статической проверки требований</span></div>
   <h1>{E(P.document_title)}</h1>
-  <p class="verdict v-{V.dev_status}">{E(head_line)}</p>
+  <p class="verdict v-{V.dev_status}">{E(head_line)}</p>{f'{chr(10)}  <p class="after">{E(after_line)}</p>' if after_line else ''}
   <div class="facts">
     <div><b>{len(report.requirements)}</b> {_pl(len(report.requirements), 'требование', 'требования', 'требований')}</div>
     <div><b>{len(act)}</b> {_pl(len(act), 'нарушение', 'нарушения', 'нарушений')}</div>
@@ -359,6 +372,7 @@ a:focus-visible,button:focus-visible,select:focus-visible,input:focus-visible,[t
 .brand{color:var(--ink);font-size:.9rem;font-weight:600}.brand span{color:var(--mute);font-weight:400;margin-left:.6em}
 .top h1{font-family:var(--serif);font-weight:500;font-size:2.2rem;line-height:1.2;margin:.4em 0 .25em;max-width:38ch;letter-spacing:-.005em}
 .verdict{font-size:1.15rem;margin:0 0 18px}.verdict.v-no{color:var(--accent)}
+.after{font-size:1.05rem;margin:-12px 0 18px;color:var(--ink)}
 .facts{display:flex;flex-wrap:wrap;gap:4px 26px;color:var(--mute);font-size:.95rem}.facts b{color:var(--ink);font-weight:600;margin-right:.3em}
 .status{display:flex;flex-wrap:wrap;gap:4px 24px;font-size:.9rem;margin-top:14px;color:var(--mute)}
 .status span.v-no,.status span.v-conditional,.status span.v-yes{color:var(--ink)}

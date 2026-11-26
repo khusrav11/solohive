@@ -2,7 +2,8 @@
 
 Поддерживается подмножество, которое порождают сами генераторы отчёта: заголовки, абзацы, цитаты,
 маркированные и нумерованные списки, таблицы (с экранированными «\\|» в ячейках), горизонтальные линии,
-строчные **жирный**, *курсив*, `код` и [ссылки](url). HTML-якоря <a id="…"></a> пропускаются.
+строчные **жирный**, *курсив*, `код` и [ссылки](url). Якорь <a id="…"></a> на отдельной строке — блок «anchor»
+(цель внутренних ссылок «#…»), комментарий <!-- pagebreak --> — разрыв страницы в PDF и DOCX.
 """
 
 from __future__ import annotations
@@ -11,6 +12,8 @@ import re
 from dataclasses import dataclass, field
 
 _ANCHOR = re.compile(r'<a\s+id="[^"]*"\s*>\s*</a>')
+_ANCHOR_LINE = re.compile(r'^\s*<a\s+id="([^"]*)"\s*>\s*</a>\s*$')
+_PAGEBREAK = re.compile(r"^\s*<!--\s*pagebreak\s*-->\s*$")
 _HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
 _LIST = re.compile(r"^(\s*)(?:[-*+]|\d+[.)])\s+(.*)$")
 _HR = re.compile(r"^\s*(?:-{3,}|\*{3,}|_{3,})\s*$")
@@ -31,9 +34,9 @@ class Span:
 
 @dataclass
 class Block:
-    kind: str                     # heading | para | quote | list | table | hr
+    kind: str                     # heading | para | quote | list | table | hr | anchor | pagebreak
     level: int = 0                # уровень заголовка
-    text: str = ""                # заголовок, абзац, цитата
+    text: str = ""                # заголовок, абзац, цитата; имя якоря
     items: list[str] = field(default_factory=list)          # пункты списка
     ordered: bool = False
     header: list[str] = field(default_factory=list)         # таблица
@@ -58,8 +61,8 @@ def spans(text: str) -> list[Span]:
             out.append(Span(m.group("c"), code=True))
         elif m.group("lt") is not None:
             url = m.group("lu")
-            out.extend(Span(s.text, bold=s.bold, italic=s.italic, code=s.code,
-                            link="" if url.startswith("#") else url) for s in spans(m.group("lt")))
+            out.extend(Span(s.text, bold=s.bold, italic=s.italic, code=s.code, link=url)
+                       for s in spans(m.group("lt")))
         elif m.group("i") is not None:
             out.append(Span(unescape(m.group("i")), italic=True))
         elif m.group("br") is not None:
@@ -72,6 +75,12 @@ def spans(text: str) -> list[Span]:
 
 def plain(text: str) -> str:
     return "".join(s.text for s in spans(text))
+
+
+def slug(text: str) -> str:
+    """Якорь заголовка как у GitHub: «4.2. Системные дефекты набора» → «42-системные-дефекты-набора»."""
+    t = plain(text).strip().lower()
+    return re.sub(r"[^\w\- ]", "", t).replace(" ", "-")
 
 
 def split_row(line: str) -> list[str]:
@@ -107,12 +116,21 @@ def _align(sep: str) -> list[str]:
 
 
 def parse(md: str) -> list[Block]:
-    lines = _ANCHOR.sub("", md).splitlines()
+    lines = [ln if _ANCHOR_LINE.match(ln) else _ANCHOR.sub("", ln) for ln in md.splitlines()]
     blocks: list[Block] = []
     i = 0
     while i < len(lines):
         line = lines[i]
         if not line.strip():
+            i += 1
+            continue
+        m = _ANCHOR_LINE.match(line)
+        if m:
+            blocks.append(Block("anchor", text=m.group(1)))
+            i += 1
+            continue
+        if _PAGEBREAK.match(line):
+            blocks.append(Block("pagebreak"))
             i += 1
             continue
         m = _HEADING.match(line)
@@ -160,7 +178,8 @@ def parse(md: str) -> list[Block]:
         buf = []
         while i < len(lines) and lines[i].strip() and not (
                 _HEADING.match(lines[i]) or _HR.match(lines[i]) or lines[i].startswith(">")
-                or _LIST.match(lines[i]) or lines[i].lstrip().startswith("|")):
+                or _LIST.match(lines[i]) or lines[i].lstrip().startswith("|")
+                or _ANCHOR_LINE.match(lines[i]) or _PAGEBREAK.match(lines[i])):
             buf.append(lines[i].rstrip())
             i += 1
         if not buf:          # строка, которую не взял ни один разбор, — как абзац

@@ -1,32 +1,215 @@
-"""Отчёт в Markdown: структура строго по разделу 6 ТЗ + уточняющие вопросы + журнал верификации."""
+"""Отчёт в Markdown: «Кратко» на первой странице, затем структура по разделу 6 ТЗ + вопросы + журнал верификации."""
 
 from __future__ import annotations
 
+import re
 from collections import Counter, defaultdict
 
+from .. import __version__
 from .. import criteria as C
 from ..agents.interviewer import STATUS_RU
 from ..agents.segmenter import KIND_RU
 from ..models import Finding, Report, Requirement, Severity, Status
+from ..textutil import nform, plural
+from .mdblocks import slug
 
 VERDICT_ICON = {"no": "⛔", "conditional": "⚠️", "yes": "✅"}
+SEV_WORD = {Severity.CRITICAL: ("критичный", "критичных", "критичных"),
+            Severity.MAJOR: ("существенный", "существенных", "существенных"),
+            Severity.MINOR: ("замечание", "замечания", "замечаний")}
+SEV_NAME = {Severity.CRITICAL: "критичный", Severity.MAJOR: "существенный", Severity.MINOR: "замечание"}
+RES_ICON = {"resolved": "✅ устранён", "partial": "◐ частично", "open": "⏳ открыт"}
+SET_SECTION = "4.2. Системные дефекты набора"
 ADDRESSEE_ORDER = ["Бизнес / Product owner", "Системный аналитик", "Архитектор", "Информационная безопасность",
                    "Тестирование"]
 
 
+def _cut(t: str, limit: int) -> str:
+    """Обрезка по границе слова: «…» вместо оборванного слова."""
+    if not limit or len(t) <= limit:
+        return t
+    head = t[: limit - 1]
+    word = head.rsplit(" ", 1)[0]
+    return (word if len(word) >= limit * 0.6 else head).rstrip(" ,;:—-") + "…"
+
+
 def cell(text: str | None, limit: int = 0) -> str:
-    t = " ".join((text or "").split()).replace("|", "\\|")
-    if limit and len(t) > limit:
-        t = t[: limit - 1] + "…"
+    t = _cut(" ".join((text or "").split()), limit).replace("|", "\\|")
     return t or "—"
+
+
+def first_sentence(text: str | None, limit: int = 200) -> str:
+    """Первое законченное предложение (если оно не слишком короткое) — для сжатых таблиц."""
+    t = " ".join((text or "").split())
+    m = re.search(r"(?<=[.!?])\s+(?=[A-ZА-ЯЁ«])", t[40:])
+    if m:
+        t = t[: 40 + m.start()]
+    return cell(t, limit)
 
 
 def q(text: str, limit: int = 0) -> str:
     """Цитата в «ёлочках» без markdown-разметки внутри."""
-    t = " ".join((text or "").split()).replace("*", "\\*").replace("_", "\\_")
-    if limit and len(t) > limit:
-        t = t[: limit - 1] + "…"
+    t = _cut(" ".join((text or "").split()), limit).replace("*", "\\*").replace("_", "\\_")
     return f"«{t}»"
+
+
+def short_loc(loc: str) -> str:
+    """«Часть A › Цели · строка 16 (страница 1)» → «Цели, строка 16, стр. 1»."""
+    where, _, rest = (loc or "").rpartition(" · ")
+    rest = re.sub(r"\s*\(страница (\d+)\)", r", стр. \1", rest)
+    last = where.split(" › ")[-1] if where else ""
+    return f"{last}, {rest}" if last else (rest or "—")
+
+
+def finding_anchor(f: Finding) -> str:
+    """Куда ведёт ссылка на дефект: карточка требования или раздел системных дефектов набора."""
+    if f.scope == "requirement" and f.rids:
+        return "#" + f.rids[0].lower()
+    return "#" + slug(SET_SECTION)
+
+
+def _sev_phrase(cnt: Counter) -> str:
+    parts = [nform(cnt[s], *SEV_WORD[s]) for s in Severity if cnt[s]]
+    if not parts:
+        return "нет"
+    return parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " и " + parts[-1]
+
+
+def _sev_cell(total: int, cnt: Counter) -> str:
+    return (f"{total} (критичных — {cnt[Severity.CRITICAL]}, существенных — {cnt[Severity.MAJOR]}, "
+            f"замечаний — {cnt[Severity.MINOR]})")
+
+
+def _resolved_ids(report: Report) -> set[str]:
+    cl = report.clarification
+    return {r.fid for r in cl.resolutions if r.status == "resolved"} if cl else set()
+
+
+def render_brief(report: Report) -> list[str]:
+    """Раздел «Кратко»: вывод, вердикт до/после уточнения, блокеры, что осталось — всё из данных прогона, без LLM."""
+    V, cl, P = report.verdict, report.clarification, report.passport
+    act = report.active_findings
+    by_sev = Counter(f.severity for f in act)
+    crit = sorted((f for f in act if f.severity == Severity.CRITICAL), key=lambda f: f.fid)
+    after = cl is not None and cl.verdict_after is not None
+    res = {r.fid: r for r in cl.resolutions} if cl else {}
+    resolved = _resolved_ids(report)
+    open_cnt = Counter(f.severity for f in act if f.fid not in resolved)
+    n_crit, n_major = by_sev[Severity.CRITICAL], by_sev[Severity.MAJOR]
+
+    if V.dev_status == "no":
+        lead = "В текущем виде документ нельзя отдавать в разработку" + (
+            f": {nform(n_crit, 'критичный дефект', 'критичных дефекта', 'критичных дефектов')} "
+            f"{plural(n_crit, 'блокирует', 'блокируют', 'блокируют')} реализацию и приёмку." if n_crit else ".")
+    elif V.dev_status == "conditional":
+        lead = (f"Документ можно отдавать в разработку после доуточнения: "
+                f"{nform(n_major, 'существенный дефект', 'существенных дефекта', 'существенных дефектов')}, критичных нет.")
+    else:
+        lead = "Документ готов к разработке: " + ("найдены только замечания." if act else "дефектов не найдено.")
+    tail = ""
+    if after:
+        va = cl.verdict_after
+        crit_fixed = sum(1 for f in crit if f.fid in resolved)
+        tail = (f"После ответов на {nform(len(cl.answers), 'вопрос', 'вопроса', 'вопросов')} устранено "
+                f"{nform(len(resolved), 'дефект', 'дефекта', 'дефектов')}")
+        if crit and crit_fixed == len(crit):
+            tail += f", в том числе все {len(crit)} критичных" if len(crit) > 1 else ", в том числе единственный критичный"
+        elif crit_fixed:
+            tail += f", из них критичных — {crit_fixed} из {len(crit)}"
+        rest = sum(open_cnt.values())
+        if rest:
+            tail += (f". Открытыми остаются {nform(rest, 'дефект', 'дефекта', 'дефектов')}: {_sev_phrase(open_cnt)} — "
+                     + {"conditional": "разработку можно начинать, доуточнив их до спринта.",
+                        "yes": "документ готов к разработке.",
+                        "no": "блокеры остаются, разработку начинать нельзя."}[va.dev_status])
+        else:
+            tail += ". Открытых дефектов не осталось."
+    L = ["## Кратко", "", f"**{lead}**" + (f" {tail}" if tail else ""), ""]
+
+    if after:
+        va = cl.verdict_after
+        changed = sum(1 for r in cl.revised if not r.is_new)
+        added = sum(1 for r in cl.revised if r.is_new)
+        L += ["| | До уточнения | После уточнения |", "| :--- | :--- | :--- |",
+              f"| Разработка | {VERDICT_ICON[V.dev_status]} {STATUS_RU[V.dev_status]} | "
+              f"{VERDICT_ICON[va.dev_status]} {STATUS_RU[va.dev_status]} |",
+              f"| Тестирование | {VERDICT_ICON[V.test_status]} {STATUS_RU[V.test_status]} | "
+              f"{VERDICT_ICON[va.test_status]} {STATUS_RU[va.test_status]} |",
+              f"| Открытые дефекты | {_sev_cell(len(act), by_sev)} | {_sev_cell(sum(open_cnt.values()), open_cnt)} |",
+              f"| Требования | {len(report.requirements)} в документе | переписано: {changed}, добавлено: {added}, "
+              f"новых критериев приёмки: {len(cl.acceptance)} |", ""]
+    else:
+        L += ["| | Вердикт |", "| :--- | :--- |",
+              f"| Разработка | {VERDICT_ICON[V.dev_status]} {STATUS_RU[V.dev_status]} |",
+              f"| Тестирование | {VERDICT_ICON[V.test_status]} {STATUS_RU[V.test_status]} |",
+              f"| Дефекты | {_sev_cell(len(act), by_sev)} |",
+              f"| Вопросы к бизнесу и аналитику | {len(report.questions)} — "
+              f"[раздел 6](#{slug('6. Уточняющие вопросы к бизнесу и аналитику')}) |", ""]
+
+    if crit:
+        L += ["### Критичные дефекты (блокеры)", ""]
+        if after and all(f.fid in resolved for f in crit):
+            L += ["| Дефект | Суть и место в документе | Как устранён ответом |", "| :--- | :--- | :--- |"]
+            for f in crit:
+                where = short_loc(f.primary.location) if f.primary else "—"
+                L.append(f"| [{f.fid}]({finding_anchor(f)}) | {cell(f.title, 110)} ({cell(where)}) | "
+                         f"{first_sentence(res[f.fid].comment, 170)} |")
+        elif after:
+            L += ["| Дефект | Суть и место в документе | Статус | Что ответ изменил |", "| :--- | :--- | :--- | :--- |"]
+            for f in crit:
+                r = res.get(f.fid)
+                where = short_loc(f.primary.location) if f.primary else "—"
+                L.append(f"| [{f.fid}]({finding_anchor(f)}) | {cell(f.title, 110)} ({cell(where)}) | "
+                         f"{RES_ICON[r.status] if r else RES_ICON['open']} | {first_sentence(r.comment, 150) if r else '—'} |")
+        else:
+            L += ["| Дефект | Суть и место в документе | Как исправить |", "| :--- | :--- | :--- |"]
+            for f in crit:
+                where = short_loc(f.primary.location) if f.primary else "—"
+                L.append(f"| [{f.fid}]({finding_anchor(f)}) | {cell(f.title, 120)} ({cell(where)}) | "
+                         f"{cell(f.recommendation, 200)} |")
+        L.append("")
+
+    if after:
+        left = sorted((f for f in act if f.fid not in resolved and f.severity != Severity.MINOR),
+                      key=lambda f: (f.severity.rank, -len(f.rids), f.fid))
+        if left:
+            L += ["### Что осталось доуточнить", ""]
+            for i, f in enumerate(left[:3], start=1):
+                L.append(f"{i}. [{f.fid}]({finding_anchor(f)}) — {cell(f.title, 120)}")
+            more = sum(open_cnt.values()) - min(len(left), 3)
+            L += ["", "Выше — открытые дефекты, затрагивающие больше всего требований"
+                  + (f"; остальные {more} — в [разделе 8](#{slug('8. Уточнение: ответы на вопросы и пересмотр')})."
+                     if more > 0 else "."), ""]
+    else:
+        L += ["### Что исправить в первую очередь", ""]
+        if V.priorities:
+            for i, pr in enumerate(V.priorities[:5], start=1):
+                L.append(f"{i}. {cell(pr.action, 220)}" + (f" ({', '.join(pr.fids)})" if pr.fids else ""))
+        else:
+            for i, f in enumerate(sorted(act, key=lambda x: (x.severity.rank, x.fid))[:5], start=1):
+                L.append(f"{i}. {cell(f.recommendation or f.title, 220)} ({f.fid})")
+        L.append("")
+
+    verified = sum(1 for f in act if any(e.verified for e in f.evidence))
+    raw = int(report.stage_times.get("raw_findings", len(report.findings)))
+    dropped = [f for f in report.findings if f.status == "dropped"]
+    merged = sum(1 for f in report.findings if f.status == "merged")
+    no_quote = sum(1 for f in dropped if "цитат" in f.note)
+    critic = len(dropped) - no_quote
+    funnel = [x for x in (
+        f"{merged} {plural(merged, 'объединён', 'объединены', 'объединены')} как дубликаты" if merged else "",
+        f"{no_quote} {plural(no_quote, 'отброшен', 'отброшены', 'отброшены')} без подтверждения цитатой" if no_quote else "",
+        f"{critic} {plural(critic, 'отклонён критиком как ложный', 'отклонены критиком как ложные', 'отклонены критиком как ложные')}"
+        if critic else "") if x]
+    sec = float(P.duration_sec or 0)
+    took = f"{sec:.0f} с" + (f" (≈{sec / 60:.1f} мин)".replace(".", ",") if sec >= 60 else "")
+    if act:
+        proof = (f"Каждая из {len(act)} находок подтверждена" if verified == len(act)
+                 else f"{verified} из {len(act)} находок подтверждены")
+        L += [f"*Как получено: рой LLM-агентов и детерминированные правила (ISO/IEC/IEEE 29148, IEEE 830), {took}. "
+              f"{proof} дословной цитатой из документа"
+              + (f"; из {raw} кандидатов {', '.join(funnel)}" if funnel else "") + ".*", ""]
+    return L
 
 
 def source_label(f: Finding) -> str:
@@ -110,24 +293,18 @@ def render(report: Report) -> str:
         f"(🔴 {by_sev[Severity.CRITICAL]} критичных · 🟡 {by_sev[Severity.MAJOR]} существенных · "
         f"🟢 {by_sev[Severity.MINOR]} замечаний) · **Уточняющих вопросов:** {len(report.questions)}  ",
     ]
-    cl0 = report.clarification
-    if cl0 is not None and cl0.verdict_after is not None:
-        va0 = cl0.verdict_after
-        fixed0 = sum(1 for r in cl0.resolutions if r.status == "resolved")
-        L += [f"> **После уточнения** ({len(cl0.answers)} ответов, устранено дефектов: {fixed0}): "
-              f"разработка — {VERDICT_ICON[va0.dev_status]} {STATUS_RU[va0.dev_status]} · тестирование — "
-              f"{VERDICT_ICON[va0.test_status]} {STATUS_RU[va0.test_status]}  "]
     L += [
         f"> Сформировано агентом **{P.agent_name} v{P.agent_version}** (коммит `{P.agent_commit}`), "
         f"модель `{', '.join(P.models)}`. Проверка по ISO/IEC/IEEE 29148:2018 (п. 5.2.5, 5.2.6) и IEEE Std 830-1998 (п. 4.3).",
         "",
-        "**Содержание:** [1. Паспорт прогона](#1-паспорт-прогона) · [2. Нарезка требований](#2-как-агент-нарезал-требования) · "
+        "**Содержание:** [Кратко](#кратко) · [1. Паспорт прогона](#1-паспорт-прогона) · [2. Нарезка требований](#2-как-агент-нарезал-требования) · "
         "[3. Проверка каждого требования](#3-проверка-каждого-требования) · [4. Проверка набора](#4-проверка-всего-набора-требований) · "
         "[5. Сводка](#5-сводка) · [6. Уточняющие вопросы](#6-уточняющие-вопросы-к-бизнесу-и-аналитику) · [7. Итог](#7-итог) · "
         + ("[8. Уточнение](#8-уточнение-ответы-на-вопросы-и-пересмотр) · " if report.clarification else "")
         + "[Приложения](#приложение-a-журнал-верификации-находок)",
         "",
     ]
+    L += render_brief(report)
 
     # --- 1. паспорт -----------------------------------------------------------------------------------
     L += [
@@ -138,7 +315,9 @@ def render(report: Report) -> str:
         f"| SHA-256 файла | `{P.document_sha256}` |",
         f"| Дата и время прогона | {P.run_started} |",
         f"| Модель LLM | `{', '.join(P.models)}` (провайдер: {P.provider}, temperature={P.temperature}) |",
-        f"| Версия агента | {P.agent_name} v{P.agent_version}, коммит `{P.agent_commit}` |",
+        f"| Версия агента | {P.agent_name} v{P.agent_version}, коммит `{P.agent_commit}`"
+        + (f" · отчёт перевыпущен из JSON прогона версией v{__version__}, без новых обращений к модели"
+           if P.agent_version != __version__ else "") + " |",
         f"| Время анализа | {P.duration_sec} с |",
         f"| Вызовов LLM | {P.llm_calls} (из кэша: {P.llm_cached_calls}); токены: {P.input_tokens:,} вход / "
         f"{P.output_tokens:,} выход |".replace(",", " "),
@@ -169,15 +348,15 @@ def render(report: Report) -> str:
     L += ["## 3. Проверка каждого требования", "",
           "### 3.1. Матрица соответствия критериям", "",
           "Обозначения: ✅ соответствует · ⚠️ замечание · ❌ нарушение · ➖ неприменимо. "
-          "Колонка «Дефекты» — число нарушений по критичности.", ""]
-    head = "| ID | " + " | ".join(c.short for c in C.INDIVIDUAL) + " | Дефекты |"
-    L += [head, "| :--- | " + " | ".join(":---:" for _ in C.INDIVIDUAL) + " | :--- |"]
+          "Колонки 🔴 🟡 🟢 — число критичных, существенных дефектов и замечаний.", ""]
+    head = "| ID | " + " | ".join(c.short for c in C.INDIVIDUAL) + " | 🔴 | 🟡 | 🟢 |"
+    L += [head, "| :--- | " + " | ".join(":---:" for _ in C.INDIVIDUAL) + " | :---: | :---: | :---: |"]
     for r in report.requirements:
         rv = report.reviews.get(r.rid)
         eff = effective_criteria(rv, primary.get(r.rid, []))
         icons = " | ".join(eff[c.code][0].icon if c.code in eff else "·" for c in C.INDIVIDUAL)
         cnt = Counter(f.severity for f in primary.get(r.rid, []))
-        d = " ".join(f"{s.icon}{cnt[s]}" for s in Severity if cnt[s]) or "—"
+        d = " | ".join(str(cnt[s]) if cnt[s] else "" for s in Severity)
         L.append(f"| [{r.rid}](#{r.rid.lower()}) | {icons} | {d} |")
     L += ["", "### 3.2. Детальная проверка", ""]
     for r in report.requirements:
@@ -343,11 +522,22 @@ def render(report: Report) -> str:
         L += [f"| {a.qid}. {cell(a.question, 200)} | {cell(a.answer)} |" for a in cl.answers]
         L.append("")
         if cl.resolutions:
-            icon = {"resolved": "✅ устранён", "partial": "◐ частично", "open": "⏳ открыт"}
             L += ["### Пересмотр дефектов", "", "| Дефект | Статус | Как ответ меняет требование |", "| :--- | :--- | :--- |"]
             for r in cl.resolutions:
                 f = next((x for x in act if x.fid == r.fid), None)
-                L.append(f"| {r.fid} {cell(f.title, 80) if f else ''} | {icon[r.status]} | {cell(r.comment)} |")
+                L.append(f"| {r.fid} {cell(f.title, 80) if f else ''} | {RES_ICON[r.status]} | {cell(r.comment)} |")
+            L.append("")
+        done = _resolved_ids(report)
+        left = sorted((f for f in act if f.fid not in done), key=lambda f: (f.severity.rank, f.fid))
+        if left:
+            L += ["### Что остаётся открытым", "",
+                  f"Ответы не закрыли {nform(len(left), 'дефект', 'дефекта', 'дефектов')}: "
+                  f"{_sev_phrase(Counter(f.severity for f in left))}. Их нужно доуточнить до спринта.", "",
+                  "| Дефект | Критичность | Суть | Где |", "| :--- | :--- | :--- | :--- |"]
+            for f in left:
+                where = short_loc(f.primary.location) if f.primary else "—"
+                L.append(f"| [{f.fid}]({finding_anchor(f)}) | {f.severity.icon} {SEV_NAME[f.severity]} | "
+                         f"{cell(f.title, 130)} | {cell(where)} |")
             L.append("")
         if cl.revised:
             L += ["### Исправленная редакция требований", ""]
@@ -405,7 +595,10 @@ def render(report: Report) -> str:
     L += [f"- **{c.name}** ({c.source}) — {c.question}" for c in C.SET]
     L += ["", "Шкала критичности:", "", C.SEVERITY_RUBRIC, "",
           "---", f"*Отчёт сгенерирован автоматически агентом {P.agent_name} v{P.agent_version} "
-                 f"(коммит {P.agent_commit}). Ручная правка отчёта не производилась.*", ""]
+                 f"(коммит {P.agent_commit}). Ручная правка отчёта не производилась."
+                 + (f" Оформление обновлено командой `python -m solohive.render` (v{__version__}); "
+                    "находки, цитаты и вердикты прогона не менялись." if P.agent_version != __version__ else "")
+                 + "*", ""]
     return "\n".join(L)
 
 
