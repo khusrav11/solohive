@@ -219,3 +219,37 @@ def test_late_stage_always_gets_one_attempt_after_breaker():
     state["down"] = False                                 # Google «отпустило», но модель ещё «остывает» 30 с
     r = asyncio.run(llm.generate("S", "late", stage="interview"))
     assert r.text == '{"ok": true}'
+
+
+def test_tolerant_schemas_accept_small_format_slips():
+    """null, «L030», строка вместо списка, объект вместо списка — принимаются без повторного запроса."""
+    from solohive.agents.reviewer import ReviewResponse
+    from solohive.agents.scenarist import ScenarioResponse
+    from solohive.agents.segmenter import SegmentResponse
+
+    seg = SegmentResponse.model_validate({"requirements": [
+        {"doc_id": None, "section": None, "line_start": "L030", "line_end": "31–32", "quote": "x", "summary": None}]})
+    r = seg.requirements[0]
+    assert (r.section, r.line_start, r.line_end, r.summary) == ("", 30, 31, "")
+
+    sc = ScenarioResponse.model_validate({"scenarios": {"title": "t", "given_when": None,
+                                                        "quotes": [{"quote": "a"}, None, "b"]}})
+    assert sc.scenarios[0].quotes == ["a", "b"] and sc.scenarios[0].given_when == ""
+
+    rv = ReviewResponse.model_validate({"reviews": [{"rid": "REQ-01", "rewrite": None, "test_ideas": "одна идея",
+                                                     "defects": [{"severity": None, "quote": None, "title": "t"}]}]})
+    assert rv.reviews[0].test_ideas == ["одна идея"] and rv.reviews[0].defects[0].severity == "MAJOR"
+
+
+def test_failed_response_is_saved_for_diagnosis(tmp_path):
+    from pydantic import BaseModel
+
+    class M(BaseModel):
+        x: int
+
+    answers = iter(['{"x": "не число"}', '{"x": 5}'])
+    s = Settings(provider="mock", model="m", cache_dir=tmp_path)
+    llm = MockLLM(s, {"t": lambda *a: next(answers)})
+    assert asyncio.run(llm.generate_json("S", "U", M, stage="t#1")).x == 5
+    saved = list((tmp_path / "failures").glob("t_1-*.txt"))
+    assert len(saved) == 1 and "не число" in saved[0].read_text(encoding="utf-8")

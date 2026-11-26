@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import json
 import re
+import types
+import typing
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .. import criteria as C
 from rapidfuzz import fuzz
@@ -71,8 +74,69 @@ def norm_status(value: Any) -> Status:
     return Status(_STATUS_MAP.get(v, "na"))
 
 
+_UNION_TYPES = tuple(t for t in (typing.Union, getattr(types, "UnionType", None)) if t is not None)
+_FIRST_INT = re.compile(r"-?\d+")
+
+
+def _variants(ann) -> tuple:
+    """Составляющие аннотации: для Optional[X] / X | None — (X, NoneType), иначе (ann,)."""
+    return typing.get_args(ann) if typing.get_origin(ann) in _UNION_TYPES else (ann,)
+
+
+def _as_text(x) -> str:
+    if isinstance(x, str):
+        return x
+    if isinstance(x, dict):  # {"quote": "…"} / {"text": "…"} вместо строки
+        for key in ("quote", "text", "value", "title"):
+            if isinstance(x.get(key), str):
+                return x[key]
+    return json.dumps(x, ensure_ascii=False) if isinstance(x, (dict, list)) else str(x)
+
+
 class Loose(BaseModel):
+    """Терпимая схема ответа LLM: мелкие отклонения формата чинятся на месте, без повторного запроса.
+
+    null → значение по умолчанию; число вместо строки → строка; «L030» или «30–32» вместо номера строки → 30;
+    одна строка вместо списка строк → список; один объект вместо списка объектов → список.
+    """
     model_config = ConfigDict(extra="ignore")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _tolerate(cls, data):
+        if not isinstance(data, dict):
+            return data
+        out = {}
+        for key, value in data.items():
+            field = cls.model_fields.get(key)
+            if field is None:
+                continue
+            kinds = _variants(field.annotation)
+            if value is None:
+                if type(None) in kinds:
+                    out[key] = None
+                continue                                   # применится значение по умолчанию
+            if str in kinds and not isinstance(value, str) and not any(
+                    typing.get_origin(k) in (list, dict) or k in (list, dict) for k in kinds):
+                value = _as_text(value)
+            elif int in kinds and isinstance(value, str):
+                m = _FIRST_INT.search(value)
+                if not m:
+                    if type(None) in kinds:
+                        out[key] = None
+                    continue
+                value = int(m.group())
+            else:
+                list_kind = next((k for k in kinds if typing.get_origin(k) is list), None)
+                if list_kind is not None:
+                    item = (typing.get_args(list_kind) or (Any,))[0]
+                    if not isinstance(value, list):
+                        value = [value]
+                    value = [v for v in value if v is not None]
+                    if item is str:
+                        value = [_as_text(v) for v in value]
+            out[key] = value
+        return out
 
 
 class RawCriterion(Loose):
