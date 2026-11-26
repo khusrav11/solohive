@@ -35,13 +35,37 @@ def _load_yaml(path: Path) -> list[dict]:
         return items
 
 
-def evaluate(report_json: Path, gold_path: Path) -> dict:
+def _line_mapper(report: dict, reference: Path | None):
+    """Строки эталона (Markdown) → строки документа отчёта (например, PDF) по тексту, а не по номеру."""
+    if reference is None or not reference.exists() or not report.get("source_lines"):
+        return lambda n: {n}
+    from .document import SourceDocument, normalize
+    from .loaders import load_document
+
+    ref = load_document(reference)
+    target = SourceDocument.from_markdown(Path("report"), "markdown", "", "\n".join(report["source_lines"]))
+    if [normalize(x.text) for x in ref.lines] == [normalize(x) for x in report["source_lines"]]:
+        return lambda n: {n}
+    cache: dict[int, set[int]] = {}
+
+    def mapper(n: int) -> set[int]:
+        if n not in cache:
+            line = ref.line(n)
+            text = normalize(line.text) if line else ""
+            m = target.find(text[:120]) if len(text) >= 6 else None
+            cache[n] = set(range(m.line_start, m.line_end + 1)) if m else set()
+        return cache[n]
+    return mapper
+
+
+def evaluate(report_json: Path, gold_path: Path, reference: Path | None = None) -> dict:
     report = json.loads(report_json.read_text(encoding="utf-8"))
     gold = _load_yaml(gold_path)
     active = [f for f in report["findings"] if f["status"] == "active"]
+    to_target = _line_mapper(report, reference)
     found, missed = [], []
     for g in gold:
-        lines = set(int(x) for x in g["lines"])
+        lines = set().union(*(to_target(int(x)) for x in g["lines"])) if g["lines"] else set()
         kws = [k.lower() for k in g["keywords"]]
         hit = None
         for f in active:
@@ -62,8 +86,9 @@ def main(argv: list[str] | None = None) -> int:
         print(__doc__)
         return 2
     report = Path(argv[0])
-    gold = Path(argv[1]) if len(argv) > 1 else Path(__file__).resolve().parents[1] / "eval" / "gold_defects.yaml"
-    res = evaluate(report, gold)
+    root = Path(__file__).resolve().parents[1]
+    gold = Path(argv[1]) if len(argv) > 1 else root / "eval" / "gold_defects.yaml"
+    res = evaluate(report, gold, reference=root / "examples" / "requirements.md")
     print(f"Полнота (recall) по контрольному списку: {res['recall']:.0%} "
           f"({len(res['found'])}/{len(res['found']) + len(res['missed'])}); находок в отчёте: {res['total_active']}")
     for g, f in res["found"]:
