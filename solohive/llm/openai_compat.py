@@ -28,6 +28,8 @@ class OpenAICompatLLM(BaseLLM):
         self._use_temperature = True
         self._use_json_format = True
         self._max_tokens_key = "max_tokens"
+        # OpenRouter передаёт модели глубину рассуждений (у Gemini — thinkingLevel): механические этапы думают коротко
+        self._use_reasoning = settings.provider == "openrouter"
 
     async def _generate(self, model, system, user, json_schema, effort=None) -> LLMResponse:
         oa = self._openai
@@ -39,6 +41,9 @@ class OpenAICompatLLM(BaseLLM):
                 kwargs["temperature"] = self.settings.temperature
             if self._use_json_format:
                 kwargs["response_format"] = {"type": "json_object"}
+            level = (self.settings.thinking_level or effort or "").lower()
+            if level and self._use_reasoning:
+                kwargs["extra_body"] = {"reasoning": {"effort": "low" if level == "minimal" else level}}
             try:
                 resp = await self._client.chat.completions.create(**kwargs)
                 break
@@ -49,6 +54,9 @@ class OpenAICompatLLM(BaseLLM):
                     continue
                 if "response_format" in low and self._use_json_format:
                     self._use_json_format = False
+                    continue
+                if "reasoning" in low and self._use_reasoning:
+                    self._use_reasoning = False
                     continue
                 if "max_tokens" in low and self._max_tokens_key == "max_tokens":
                     self._max_tokens_key = "max_completion_tokens"
