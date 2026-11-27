@@ -2,7 +2,7 @@
 
 **Команда SoloHive · BCC-HUB x MNU FinTech Hackathon 2026 · Agent Challenge**
 
-**▶️ Демо-видео (2:51, со звуком):** [youtu.be/iuOXDekLs0Y](https://youtu.be/iuOXDekLs0Y) · **Презентация:** [`docs/SoloHive_presentation.pdf`](docs/SoloHive_presentation.pdf)
+**▶️ Демо-видео (3:04, со звуком):** [youtu.be/H9gl-FcdDMI](https://youtu.be/H9gl-FcdDMI) · **Презентация:** [`docs/SoloHive_presentation.pdf`](docs/SoloHive_presentation.pdf)
 
 SoloHive проводит **статическую проверку документа с требованиями до разработки**: нарезает документ на отдельные требования, проверяет каждое и весь набор по **ISO/IEC/IEEE 29148:2018 (п. 5.2.5, 5.2.6)** и **IEEE Std 830-1998 (п. 4.3)**, проигрывает ТЗ на конкретных сценариях, задаёт уточняющие вопросы бизнесу и выпускает доказательный отчёт на русском языке. Каждое замечание ссылается на точное место в документе: раздел, номер строки и страницу PDF. По ответам на вопросы агент пишет **исправленную редакцию ТЗ**.
 
@@ -40,7 +40,7 @@ python -m solohive --input examples/requirements.md --output reports/requirement
 | Вердикт после уточнения | разработка ⚠️ ГОТОВ С УСЛОВИЯМИ · тестирование ⚠️ ГОТОВ С УСЛОВИЯМИ |
 | Отчёт | [`reports/report.pdf`](reports/report.pdf): на первой странице «Кратко» — вердикт до и после уточнения, 6 блокеров и как каждый закрыт, что осталось доуточнить. Он же в [`.docx`](reports/report.docx), [`.md`](reports/report.md), [`.html`](reports/report.html), [`.json`](reports/report.json) |
 | Исправленное ТЗ | [`reports/report_revised.pdf`](reports/report_revised.pdf) (и [`.md`](reports/report_revised.md)): «было → стало», 5 новых требований, 7 критериев приёмки |
-| Демо-видео | [youtu.be/iuOXDekLs0Y](https://youtu.be/iuOXDekLs0Y), 2:51 со звуком: запуск одной командой, работа роя, вопросы агента и ответы, отчёт в PDF и HTML, исправленное ТЗ, тесты и CI |
+| Демо-видео | [youtu.be/H9gl-FcdDMI](https://youtu.be/H9gl-FcdDMI), 3:04 со звуком: запуск одной командой, работа роя, вопросы агента и ответы, отчёт в PDF и HTML, исправленное ТЗ, тесты и CI |
 | Презентация | [`docs/SoloHive_presentation.pdf`](docs/SoloHive_presentation.pdf): 10 слайдов — проблема, рой агентов, проверка цитат, демо, результат 38 из 40, режим уточнения, что получает команда, качество и запуск |
 | Время и стоимость | ≈ 3,5 мин анализа + ≈ 40 с на исправленное ТЗ, ≈ $0.45 за прогон (12 вызовов LLM, ~120 тыс. токенов на вход) |
 
