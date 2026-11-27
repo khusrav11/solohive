@@ -10,7 +10,24 @@ SoloHive проводит **статическую проверку докуме
 
 ### Результат на тестовом документе организаторов
 
-Финальный прогон по `examples/requirements.pdf` лежит в [`reports/`](reports/). Модель: `gemini-3.8-flash` через OpenRouter.
+Модель: `gemini-3.8-flash` через OpenRouter. Оба прогона лежат в [`reports/`](reports/).
+
+**Прогон по выданному документу `requirements.md`** — команда из заявки:
+
+```bash
+python -m solohive --input examples/requirements.md --output reports/requirements_report.md
+```
+
+| Показатель | Значение |
+| :--- | :--- |
+| Найдено дефектов из контрольного списка эксперта (40 шт.) | **39 (98%)** |
+| Требований выделено | 36, каждое с точной цитатой и номерами строк |
+| Нарушений в отчёте | 59: 🔴 5 · 🟡 39 · 🟢 15. Все 126 ссылок на строки совпадают со строками `requirements.md` |
+| Вердикт | разработка ⛔ НЕ ГОТОВ · тестирование ⛔ НЕ ГОТОВ; 12 уточняющих вопросов |
+| Отчёт | [`reports/requirements_report.md`](reports/requirements_report.md) — в формате входа; рядом [`.html`](reports/requirements_report.html) и [`.json`](reports/requirements_report.json) |
+| Время | ≈ 4,7 мин |
+
+**Прогон по PDF-версии того же документа с режимом уточнения (`--ask`)** — PDF на входе, PDF на выходе; этот прогон показан в демо-видео:
 
 | Показатель | Значение |
 | :--- | :--- |
@@ -43,15 +60,18 @@ pip install -r requirements.txt
 cp .env.example .env                                    # Windows: copy .env.example .env
 #    откройте .env и впишите GEMINI_API_KEY=...
 
-# 3. Запустить проверку одной командой
-python -m solohive --input examples/requirements.pdf --output reports/report.pdf
+# 3. Запустить проверку одной командой (выданный документ requirements.md → отчёт в Markdown)
+python -m solohive --input examples/requirements.md --output reports/requirements_report.md
+#    тот же документ в PDF → отчёт в PDF:
+#    python -m solohive --input examples/requirements.pdf --output reports/report.pdf
 ```
 
 Результат прогона:
-- **`reports/report.pdf`** — отчёт по разделу 6 ТЗ. Первая страница — «Кратко»: главное для руководителя на одной странице. В PDF есть кликабельное оглавление в боковой панели, ссылки ведут от сводки к карточкам требований; в DOCX — заголовки Word и внутренние ссылки. Формат задаётся расширением `--output`: `.pdf`, `.docx` (Word), `.md`, `.html`, `.json`. Без `--output` отчёт выходит **в формате входного документа**: PDF → PDF, DOCX → DOCX, Markdown → Markdown;
-- **`reports/report.md`** — тот же отчёт в Markdown (кладётся рядом всегда);
-- **`reports/report.html`** — тот же отчёт в интерактивном виде: дефекты рядом с размеченным документом, фильтры, поиск, матрица, сценарии. Откройте в браузере, работает офлайн;
-- **`reports/report.json`** — машиночитаемая версия для CI и других систем.
+- **`reports/requirements_report.md`** — отчёт по разделу 6 ТЗ в формате входного документа. Открывается разделом «Кратко»: главное для руководителя на одной странице;
+- **`reports/requirements_report.html`** — тот же отчёт в интерактивном виде: дефекты рядом с размеченным документом, фильтры, поиск, матрица, сценарии. Откройте в браузере, работает офлайн;
+- **`reports/requirements_report.json`** — машиночитаемая версия для CI и других систем.
+
+Формат отчёта задаётся расширением `--output`: `.pdf`, `.docx` (Word), `.md`, `.html`, `.json`. Без `--output` отчёт выходит **в формате входного документа**: PDF → PDF, DOCX → DOCX, Markdown → Markdown. Пример PDF-прогона с уточнением — [`reports/report.pdf`](reports/report.pdf): кликабельное оглавление в боковой панели, ссылки от «Кратко» к карточкам требований; рядом тот же отчёт в [`.docx`](reports/report.docx), [`.md`](reports/report.md), [`.html`](reports/report.html), [`.json`](reports/report.json) и исправленное ТЗ.
 
 Готовый отчёт можно перевыпустить в другом формате без нового прогона модели: `python -m solohive.render reports/report.json reports/report.docx`.
 
@@ -70,7 +90,7 @@ python -m solohive --input examples/requirements.pdf --output reports/report.pdf
 ```bash
 docker build -t solohive .
 docker run --rm --env-file .env -v "$PWD/reports:/app/reports" solohive \
-  --input examples/requirements.pdf --output reports/report.pdf
+  --input examples/requirements.md --output reports/requirements_report.md
 ```
 
 ### Как получить ключ LLM
@@ -231,7 +251,8 @@ python -m pytest -q                    # 63 теста: загрузчики, п
 Полнота отчёта сверяется с контрольным списком эксперта (40 дефектов учебного документа). Агент этот файл не читает:
 
 ```bash
-python -m solohive.evaluate reports/report.json eval/gold_defects.yaml
+python -m solohive.evaluate reports/requirements_report.json   # прогон по requirements.md: 39/40 (98%)
+python -m solohive.evaluate reports/report.json                # прогон по PDF: 38/40 (95%)
 ```
 
 ---
